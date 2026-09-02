@@ -1,0 +1,11 @@
+#!/bin/bash
+SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "$0")")/../scripts" && pwd)"
+pkill -f "agy-widget-gtk.py" 2>/dev/null
+sleep 1
+/usr/bin/python3 "$SCRIPT_DIR/agy-widget-gtk.py" &
+sleep 2
+WID=$(xdotool search --name "AGY-TOKENS" 2>/dev/null | head -1)
+if [ -n "$WID" ]; then
+    xprop -id "$WID" -f _NET_WM_STATE 32a -set _NET_WM_STATE "_NET_WM_STATE_ABOVE,_NET_WM_STATE_SKIP_TASKBAR,_NET_WM_STATE_SKIP_PAGER" 2>/dev/null
+    echo "✅ Widget at $(xdotool getwindowgeometry "$WID" 2>/dev/null | grep Position)"
+fi
