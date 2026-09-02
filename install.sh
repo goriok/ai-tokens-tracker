@@ -2,7 +2,7 @@
 set -e
 BASE="$(cd "$(dirname "$0")" && pwd)"
 
-echo "=== agy-tracker installer (standalone) ==="
+echo "=== ai-tokens-tracker installer (standalone) ==="
 echo "For Claude Code or Antigravity plugin install, see README.md instead."
 echo ""
 

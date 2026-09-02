@@ -1,12 +1,12 @@
 {
-  "name": "agy-tracker",
-  "description": "Track agy (Google Antigravity CLI) token/quota usage — zero-cost /usage polling, SQLite storage, HTML report with charts, and auto-model-picking delegation.",
-  "version": "0.2.0",
+  "name": "ai-tokens-tracker",
+  "description": "Track AI agent token/quota usage — starts with the Google Antigravity CLI (agy), zero-cost /usage polling, SQLite storage, HTML report with charts, and auto-model-picking delegation. Other agents planned.",
+  "version": "0.3.0",
   "author": {
     "name": "Igor Soares Alves",
     "url": "https://github.com/goriok"
   },
-  "homepage": "https://github.com/goriok/agy-tracker",
-  "repository": "https://github.com/goriok/agy-tracker.git",
+  "homepage": "https://github.com/goriok/ai-tokens-tracker",
+  "repository": "https://github.com/goriok/ai-tokens-tracker.git",
   "license": "MIT"
 }

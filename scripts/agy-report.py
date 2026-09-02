@@ -212,11 +212,11 @@ def fetch_data() -> tuple[list[dict], list[dict]]:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--out", default=None, help="Output path (default: ~/.cache/agy-tracker/report.html)")
+    parser.add_argument("--out", default=None, help="Output path (default: ~/.cache/ai-tokens-tracker/report.html)")
     parser.add_argument("--no-open", action="store_true", help="Don't open the report in a browser")
     args = parser.parse_args()
 
-    out_path = Path(args.out) if args.out else Path.home() / ".cache" / "agy-tracker" / "report.html"
+    out_path = Path(args.out) if args.out else Path.home() / ".cache" / "ai-tokens-tracker" / "report.html"
     out_path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
 
     snapshots, calls = fetch_data()

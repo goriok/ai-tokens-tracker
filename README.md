@@ -1,7 +1,11 @@
-# agy-tracker
+# ai-tokens-tracker
 
-Rastreia o consumo de tokens/quota do Google Antigravity CLI (`agy`) — leve, sem custo de token
-para coletar, cobrindo o uso via TUI (não só chamadas `-p`).
+Rastreia o consumo de tokens/quota de agentes de IA — leve, sem custo de token para coletar.
+
+Hoje cobre o Google Antigravity CLI (`agy`), cobrindo o uso via TUI (não só chamadas `-p`).
+Outros agentes (Claude Code, hermes) estão planejados — ver "Limitações conhecidas" e a
+arquitetura hexagonal abaixo, pensada para receber um novo `AgentRunner` por agente sem reescrever
+o resto do pipeline.
 
 Ver `docs/madrs/` para o racional completo (por que `/usage` polling e não outras fontes
 consideradas — protobuf interno, LiteLLM, screen-scraping — todas rejeitadas).
@@ -21,7 +25,7 @@ consideradas — protobuf interno, LiteLLM, screen-scraping — todas rejeitadas
   por complexidade (`--complexity low|medium|high`) + quota semanal restante (ver
   `core/model_policy.py`), registrando o resultado como uma chamada rastreada.
 
-Dados em `~/.local/share/agy-tracker/usage.db` (SQLite; sobrescrevível via `$AGY_TOOL_DB`).
+Dados em `~/.local/share/ai-tokens-tracker/usage.db` (SQLite; sobrescrevível via `$AGY_TOOL_DB`).
 
 ## Arquitetura
 
@@ -30,7 +34,7 @@ Hexagonal (ports & adapters — ver `docs/madrs/MADR-002`):
 ```
 core/interfaces.py         # portas: UsageStore, AgyRunner
 adapters/sqlite_usage_store.py   # único adapter de UsageStore hoje
-adapters/agy_cli_runner.py       # único adapter de AgyRunner hoje
+adapters/agy_cli_runner.py       # único adapter de AgyRunner hoje — outros agentes viram novos adapters
 scripts/                   # aplicação — usa só as portas, nunca sqlite3/subprocess direto
 ```
 
@@ -39,14 +43,14 @@ scripts/                   # aplicação — usa só as portas, nunca sqlite3/su
 ### Standalone
 
 ```bash
-bash install.sh   # symlinks bin/agystatus, bin/agysnapshot, bin/agywidget em ~/.local/bin/
+bash install.sh   # symlinks bin/agystatus, bin/agysnapshot, bin/agywidget, bin/agydelegate em ~/.local/bin/
 ```
 
 ### Como plugin do Claude Code
 
 ```
-/plugin marketplace add goriok/agy-tracker
-/plugin install agy-tracker
+/plugin marketplace add goriok/ai-tokens-tracker
+/plugin install ai-tokens-tracker
 ```
 
 Registra a skill `agy-tracking` e os comandos `/agy-status`, `/agy-widget`.
@@ -54,10 +58,10 @@ Registra a skill `agy-tracking` e os comandos `/agy-status`, `/agy-widget`.
 ### Como plugin do Antigravity (`agy`)
 
 ```bash
-agy plugin install /path/to/agy-tracker/plugins/agy-tracker
+agy plugin install /path/to/ai-tokens-tracker/plugins/ai-tokens-tracker
 # ou, a partir de um clone:
-git clone git@github.com:goriok/agy-tracker.git
-agy plugin install ./agy-tracker/plugins/agy-tracker
+git clone git@github.com:goriok/ai-tokens-tracker.git
+agy plugin install ./ai-tokens-tracker/plugins/ai-tokens-tracker
 ```
 
 ## Uso
@@ -76,6 +80,9 @@ a quota é semanal, alta frequência não agrega muito).
 
 ## Limitações conhecidas
 
+- Só cobre o `agy` (Google Antigravity CLI) hoje — os nomes de comando (`agystatus`,
+  `agysnapshot`, `agywidget`, `agydelegate`) e o schema de dados ainda são específicos dele.
+  Suporte a outros agentes é planejado, sem data definida.
 - `/usage` dá consumo agregado por grupo de modelo e janela semanal, não por tarefa individual.
   "Quantos tokens uma tarefa específica gastou" só é respondível para chamadas feitas via
   `agy-track.py`, não para uso via TUI.

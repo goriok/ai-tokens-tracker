@@ -5,7 +5,7 @@ description: "Track and display agy (Google Antigravity CLI) token/quota usage. 
 
 # agy Token Tracking
 
-Data lives in a local SQLite database (`~/.local/share/agy-tracker/usage.db` by default, or
+Data lives in a local SQLite database (`~/.local/share/ai-tokens-tracker/usage.db` by default, or
 `$AGY_TOOL_DB` if set) — never JSONL, never the agy binary's own internal SQLite (that one is
 undocumented protobuf and not touched by this tool). See `docs/madrs/` in this repo for why.
 

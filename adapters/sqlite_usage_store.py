@@ -33,7 +33,7 @@ CREATE INDEX IF NOT EXISTS idx_task_calls_timestamp ON task_calls(timestamp);
 CREATE INDEX IF NOT EXISTS idx_task_calls_model ON task_calls(model);
 """
 
-DEFAULT_DB_PATH = Path.home() / ".local" / "share" / "agy-tracker" / "usage.db"
+DEFAULT_DB_PATH = Path.home() / ".local" / "share" / "ai-tokens-tracker" / "usage.db"
 
 
 class SqliteUsageStore:
