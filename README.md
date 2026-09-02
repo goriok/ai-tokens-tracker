@@ -17,6 +17,9 @@ consideradas — protobuf interno, LiteLLM, screen-scraping — todas rejeitadas
   dados coletados.
 - `scripts/agy-widget-gtk.py` — widget GTK3 always-on-top (Linux desktop), mostra quota atual
   e chamadas rastreadas do dia.
+- `scripts/agy-delegate.py` — roda uma tarefa via `agy -p`, escolhendo o modelo automaticamente
+  por complexidade (`--complexity low|medium|high`) + quota semanal restante (ver
+  `core/model_policy.py`), registrando o resultado como uma chamada rastreada.
 
 Dados em `~/.local/share/agy-tracker/usage.db` (SQLite; sobrescrevível via `$AGY_TOOL_DB`).
 
@@ -63,6 +66,7 @@ agy plugin install ./agy-tracker/plugins/agy-tracker
 agysnapshot   # registra um snapshot de quota agora (custo zero)
 agystatus     # gera e abre o relatório HTML
 agywidget     # widget GTK always-on-top (Linux)
+agydelegate --complexity low --task "revisão de PR" "revise este diff..."
 
 python3 scripts/agy-track.py --model gemini-3.7-flash-low --task "revisão de PR" "revise este diff..."
 ```

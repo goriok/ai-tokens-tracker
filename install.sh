@@ -11,7 +11,8 @@ chmod +x "$BASE/bin/"*
 ln -sf "$BASE/bin/agystatus" ~/.local/bin/agystatus
 ln -sf "$BASE/bin/agysnapshot" ~/.local/bin/agysnapshot
 ln -sf "$BASE/bin/agywidget" ~/.local/bin/agywidget
-echo "✅ Commands linked in ~/.local/bin: agystatus, agysnapshot, agywidget"
+ln -sf "$BASE/bin/agydelegate" ~/.local/bin/agydelegate
+echo "✅ Commands linked in ~/.local/bin: agystatus, agysnapshot, agywidget, agydelegate"
 
 echo ""
 echo "=== Next steps ==="

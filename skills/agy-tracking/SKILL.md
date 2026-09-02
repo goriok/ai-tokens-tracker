@@ -21,3 +21,6 @@ Two kinds of data:
 - `bash bin/agysnapshot` — record one quota snapshot now (normally run on a timer)
 - `bash bin/agywidget` — launch the GTK always-on-top widget (Linux desktop only)
 - `python3 scripts/agy-track.py --model <model> --task "<label>" "<prompt>"` — run a tracked task call
+- `bash bin/agydelegate --complexity <low|medium|high> --task "<label>" "<prompt>"` — delegate a
+  task to agy, auto-picking the model by complexity + remaining quota (see the `agy-delegate`
+  skill in `goriok/my-skills` for when to use this)

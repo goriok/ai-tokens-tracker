@@ -8,7 +8,7 @@
     {
       "name": "agy-tracker",
       "source": "./",
-      "description": "Track agy (Google Antigravity CLI) token/quota usage — zero-cost /usage polling, SQLite storage, HTML report with charts."
+      "description": "Track agy (Google Antigravity CLI) token/quota usage — zero-cost /usage polling, SQLite storage, HTML report with charts, and auto-model-picking delegation."
     }
   ]
 }
