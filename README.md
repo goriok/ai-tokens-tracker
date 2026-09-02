@@ -55,6 +55,10 @@ bash install.sh   # symlinks bin/agystatus, bin/agysnapshot, bin/agywidget, bin/
 
 Registra a skill `agy-tracking` e os comandos `/agy-status`, `/agy-widget`.
 
+**Atualizar:** `/plugin marketplace update goriok/ai-tokens-tracker`, seguido de `/reload-plugins`
+para o Claude Code recarregar o conteúdo novo — sem o reload, o autocomplete de slash command
+continua mostrando a versão em cache.
+
 ### Como plugin do Antigravity (`agy`)
 
 ```bash
@@ -63,6 +67,15 @@ agy plugin install /path/to/ai-tokens-tracker/plugins/ai-tokens-tracker
 git clone git@github.com:goriok/ai-tokens-tracker.git
 agy plugin install ./ai-tokens-tracker/plugins/ai-tokens-tracker
 ```
+
+`plugins/ai-tokens-tracker/skills/` é um symlink para `../../skills` (a mesma pasta que o Claude
+Code usa) — uma única fonte, sem duplicar conteúdo entre os dois formatos.
+
+**Atualizar:** `git pull` no clone, depois `agy plugin install ./ai-tokens-tracker/plugins/ai-tokens-tracker`
+de novo — sobrescreve o registro anterior em `~/.gemini/config/plugins/ai-tokens-tracker/`. Não
+existe `agy plugin update`; instalar de novo é o mecanismo de atualização. `agy plugin validate
+./ai-tokens-tracker/plugins/ai-tokens-tracker` confirma que a pasta está bem formada antes de
+instalar.
 
 ## Uso
 
