@@ -13,7 +13,10 @@ ln -sf "$BASE/bin/agysnapshot" ~/.local/bin/agysnapshot
 ln -sf "$BASE/bin/agywidget" ~/.local/bin/agywidget
 ln -sf "$BASE/bin/agydelegate" ~/.local/bin/agydelegate
 ln -sf "$BASE/bin/claudecodesnapshot" ~/.local/bin/claudecodesnapshot
-echo "✅ Commands linked in ~/.local/bin: agystatus, agysnapshot, agywidget, agydelegate, claudecodesnapshot"
+ln -sf "$BASE/bin/tokencompare" ~/.local/bin/tokencompare
+ln -sf "$BASE/bin/tokendashboard" ~/.local/bin/tokendashboard
+echo "✅ Commands linked in ~/.local/bin: agystatus, agysnapshot, agywidget, agydelegate, claudecodesnapshot, tokencompare, tokendashboard"
+echo "   (tokendashboard needs 'uv sync' run once in $BASE — it depends on fastapi/uvicorn)"
 
 echo ""
 echo "=== Next steps ==="
