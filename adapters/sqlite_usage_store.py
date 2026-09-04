@@ -44,7 +44,8 @@ CREATE TABLE IF NOT EXISTS claude_code_usage_events (
     input_tokens INTEGER NOT NULL DEFAULT 0,
     output_tokens INTEGER NOT NULL DEFAULT 0,
     cache_read_input_tokens INTEGER NOT NULL DEFAULT 0,
-    cache_creation_input_tokens INTEGER NOT NULL DEFAULT 0
+    cache_creation_input_tokens INTEGER NOT NULL DEFAULT 0,
+    agent_id TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_cc_usage_timestamp ON claude_code_usage_events(timestamp);
 CREATE INDEX IF NOT EXISTS idx_cc_usage_model ON claude_code_usage_events(model);
@@ -71,7 +72,21 @@ class SqliteUsageStore:
         # here is a short-lived read/write with no cross-request shared state.
         self._conn = sqlite3.connect(self._path, check_same_thread=False)
         self._conn.executescript(SCHEMA)
+        self._migrate()
         os.chmod(self._path, 0o600)  # idempotent — also tightens pre-existing files
+
+    def _migrate(self) -> None:
+        # ALTER TABLE ADD COLUMN has no IF NOT EXISTS — added after claude_code_usage_events
+        # already shipped, so pre-existing databases need this instead of a fresh CREATE TABLE.
+        try:
+            with self._conn:
+                self._conn.execute("ALTER TABLE claude_code_usage_events ADD COLUMN agent_id TEXT")
+        except sqlite3.OperationalError as exc:
+            if "duplicate column" not in str(exc):
+                raise
+        self._conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_cc_usage_agent ON claude_code_usage_events(agent_id)"
+        )
 
     def record_snapshot(self, snapshot: UsageSnapshot) -> None:
         with self._conn:
@@ -119,8 +134,9 @@ class SqliteUsageStore:
             self._conn.execute(
                 "INSERT OR IGNORE INTO claude_code_usage_events"
                 " (timestamp, session_id, project_slug, cwd, git_branch, model, request_id,"
-                " input_tokens, output_tokens, cache_read_input_tokens, cache_creation_input_tokens)"
-                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                " input_tokens, output_tokens, cache_read_input_tokens, cache_creation_input_tokens,"
+                " agent_id)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     event.timestamp,
                     event.session_id,
@@ -133,13 +149,15 @@ class SqliteUsageStore:
                     event.output_tokens,
                     event.cache_read_input_tokens,
                     event.cache_creation_input_tokens,
+                    event.agent_id,
                 ),
             )
 
     def list_claude_code_events(self) -> list[ClaudeCodeUsageEvent]:
         cur = self._conn.execute(
             "SELECT timestamp, session_id, project_slug, cwd, git_branch, model, request_id,"
-            " input_tokens, output_tokens, cache_read_input_tokens, cache_creation_input_tokens"
+            " input_tokens, output_tokens, cache_read_input_tokens, cache_creation_input_tokens,"
+            " agent_id"
             " FROM claude_code_usage_events ORDER BY timestamp"
         )
         return [ClaudeCodeUsageEvent(*row) for row in cur.fetchall()]

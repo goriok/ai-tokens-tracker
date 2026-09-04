@@ -15,8 +15,11 @@ Three kinds of data:
 - **Task calls** (`task_calls` table) — real token counts from individual `-p` calls made via
   `scripts/agy-track.py`. Covers only calls made through that wrapper, not TUI usage.
 - **Claude Code events** (`claude_code_usage_events` table) — real token counts per request,
-  read from local transcripts (`~/.claude/projects/**/*.jsonl`). Zero-cost, covers all Claude
-  Code usage (interactive and non-interactive alike).
+  read from local transcripts (`~/.claude/projects/**/*.jsonl`, recursive — includes
+  `subagents/**/*.jsonl`). Zero-cost, covers interactive/non-interactive sessions and subagents
+  (Task/Agent tool, Workflow tool). Subagent events share their parent session's `session_id`
+  (no session of their own) but carry a distinct `agent_id` for `isSidechain: true` records —
+  use `agent_id` to separate them when grouping by session isn't enough.
 
 `core/usage.collect_usage_events` normalizes Claude Code events and agy task calls into one
 tool-agnostic `UsageEvent` shape — reports/dashboards read that, not the raw per-tool tables.

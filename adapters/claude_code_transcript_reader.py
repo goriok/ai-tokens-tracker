@@ -27,7 +27,7 @@ class ClaudeCodeTranscriptReader:
         for project_dir in sorted(self._projects_dir.iterdir()):
             if not project_dir.is_dir():
                 continue
-            for transcript_path in sorted(project_dir.glob("*.jsonl")):
+            for transcript_path in sorted(project_dir.rglob("*.jsonl")):
                 events.extend(self._read_new_events_from_file(project_dir.name, transcript_path))
         return events
 
@@ -84,4 +84,5 @@ class ClaudeCodeTranscriptReader:
             output_tokens=usage.get("output_tokens", 0),
             cache_read_input_tokens=usage.get("cache_read_input_tokens", 0),
             cache_creation_input_tokens=usage.get("cache_creation_input_tokens", 0),
+            agent_id=record.get("agentId") if record.get("isSidechain") else None,
         )

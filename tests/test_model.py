@@ -28,6 +28,28 @@ def test_usage_event_from_claude_code_normalizes_fields():
     assert result.cache_read_tokens == 30
     assert result.cache_creation_tokens == 20
     assert result.total_tokens == 200
+    assert result.agent_id is None
+
+
+def test_usage_event_from_claude_code_propagates_agent_id_for_sidechain_events():
+    event = ClaudeCodeUsageEvent(
+        timestamp="2026-09-01T10:00:00Z",
+        session_id="sess-1",
+        project_slug="my-project",
+        cwd="/home/user/my-project",
+        git_branch="main",
+        model="claude-sonnet-5",
+        request_id="req-1",
+        input_tokens=100,
+        output_tokens=50,
+        cache_read_input_tokens=30,
+        cache_creation_input_tokens=20,
+        agent_id="agent-abc",
+    )
+
+    result = usage_event_from_claude_code(event)
+
+    assert result.agent_id == "agent-abc"
 
 
 def test_usage_event_from_task_call_normalizes_fields():

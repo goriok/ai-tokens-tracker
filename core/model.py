@@ -55,6 +55,7 @@ class ClaudeCodeUsageEvent:
     output_tokens: int
     cache_read_input_tokens: int
     cache_creation_input_tokens: int
+    agent_id: str | None = None
 
 
 @dataclass
@@ -72,6 +73,7 @@ class UsageEvent:
     output_tokens: int
     cache_read_tokens: int
     cache_creation_tokens: int
+    agent_id: str | None = None
 
     @property
     def total_tokens(self) -> int:
@@ -89,6 +91,7 @@ def usage_event_from_claude_code(event: ClaudeCodeUsageEvent) -> UsageEvent:
         output_tokens=event.output_tokens,
         cache_read_tokens=event.cache_read_input_tokens,
         cache_creation_tokens=event.cache_creation_input_tokens,
+        agent_id=event.agent_id,
     )
 
 

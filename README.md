@@ -21,9 +21,14 @@ consideradas — protobuf interno, LiteLLM, screen-scraping — todas rejeitadas
   Pensado para rodar em cron/timer, ex. de hora em hora.
 - `scripts/agy-track.py` — wrapper opcional de `agy -p` para tarefas específicas: registra
   tokens exatos daquela chamada, com um label.
-- `scripts/claude-code-snapshot.py` — lê `~/.claude/projects/**/*.jsonl` (transcripts locais já
-  escritos pelo Claude Code, custo **zero** de token) e grava tokens exatos por request no
-  SQLite. Incremental via cursor de byte offset — seguro rodar com frequência (ex. a cada 5min).
+- `scripts/claude-code-snapshot.py` — lê `~/.claude/projects/**/*.jsonl` recursivamente (transcripts
+  locais já escritos pelo Claude Code, custo **zero** de token) e grava tokens exatos por request
+  no SQLite. Incremental via cursor de byte offset — seguro rodar com frequência (ex. a cada
+  5min). Inclui subagentes (`subagents/**/*.jsonl`, inclusive os do Workflow tool) — esses eventos
+  compartilham o `session_id` da conversa que os lançou (não têm sessão própria), mas carregam um
+  `agent_id` distinto (`isSidechain: true` no transcript), então dá pra separá-los por agente
+  mesmo agrupados na mesma sessão. Essa cobertura foi adicionada em 2026-09-04 — históricos
+  coletados antes dessa data estavam subcontados (não incluíam subagentes).
 - `scripts/agy-report.py` — gera um HTML standalone (Chart.js via CDN, sem servidor) com os
   dados coletados.
 - `scripts/token-compare-report.py` — gera um HTML standalone (snapshot único, sem servidor)
