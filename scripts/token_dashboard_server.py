@@ -51,7 +51,7 @@ INDEX_HTML = """<!doctype html>
   th { color: GrayText; font-weight: 500; }
   td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
   button { font: inherit; font-size: 11px; padding: 2px 8px; cursor: pointer; }
-  input[type=date] { font: inherit; font-size: 11px; padding: 2px 4px; }
+  input[type=datetime-local] { font: inherit; font-size: 11px; padding: 2px 4px; }
   input[type=text] { font: inherit; font-size: 11px; padding: 2px 4px; width: 100px; }
 
   #content { flex: 1; min-height: 0; display: grid; grid-template-rows: minmax(0, 1.1fr) minmax(0, 1fr); gap: 8px; }
@@ -122,6 +122,11 @@ function allTimestamps() {
   return [...EVENTS.map(e => e.timestamp), ...SNAPSHOTS.map(s => s.timestamp)].sort();
 }
 
+function toDateTimeInput(ts) {
+  // UTC, no timezone conversion — what you type is what's compared.
+  return ts.slice(0, 19);
+}
+
 function toDateInput(ts) {
   return ts.slice(0, 10);
 }
@@ -129,14 +134,15 @@ function toDateInput(ts) {
 function defaultRanges() {
   const ts = allTimestamps();
   if (ts.length === 0) return [];
-  const days = [...new Set(ts.map(toDateInput))].sort();
-  if (days.length === 1) {
-    return [{ id: nextId++, label: "range 1", from: days[0], to: days[0] }];
+  const first = toDateTimeInput(ts[0]);
+  const last = toDateTimeInput(ts[ts.length - 1]);
+  if (ts.length === 1) {
+    return [{ id: nextId++, label: "range 1", from: first, to: last }];
   }
-  const mid = Math.floor(days.length / 2);
+  const mid = toDateTimeInput(ts[Math.floor(ts.length / 2)]);
   return [
-    { id: nextId++, label: "range 1", from: days[0], to: days[mid - 1] },
-    { id: nextId++, label: "range 2", from: days[mid], to: days[days.length - 1] },
+    { id: nextId++, label: "range 1", from: first, to: mid },
+    { id: nextId++, label: "range 2", from: mid, to: last },
   ];
 }
 
@@ -162,7 +168,7 @@ function renderLayout() {
   `;
   document.getElementById("add-range").addEventListener("click", () => {
     const ts = allTimestamps();
-    const last = ts.length ? toDateInput(ts[ts.length - 1]) : new Date().toISOString().slice(0, 10);
+    const last = ts.length ? toDateTimeInput(ts[ts.length - 1]) : new Date().toISOString().slice(0, 19);
     ranges.push({ id: nextId++, label: `range ${ranges.length + 1}`, from: last, to: last });
     renderAll();
   });
@@ -204,8 +210,8 @@ function renderTimeline() {
 }
 
 function inRange(ts, range) {
-  const d = toDateInput(ts);
-  return d >= range.from && d <= range.to;
+  const t = toDateTimeInput(ts);
+  return t >= range.from && t <= range.to;
 }
 
 function eventsInRange(range) {
@@ -230,13 +236,15 @@ function renderRangesList() {
     row.appendChild(label);
 
     const from = document.createElement("input");
-    from.type = "date";
+    from.type = "datetime-local";
+    from.step = "1";
     from.value = r.from;
     from.addEventListener("change", () => { r.from = from.value; renderCompare(); renderBreakdowns(); });
     row.appendChild(from);
 
     const to = document.createElement("input");
-    to.type = "date";
+    to.type = "datetime-local";
+    to.step = "1";
     to.value = r.to;
     to.addEventListener("change", () => { r.to = to.value; renderCompare(); renderBreakdowns(); });
     row.appendChild(to);
