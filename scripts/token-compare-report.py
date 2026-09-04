@@ -162,8 +162,19 @@ function renderTimeline() {
   const days = [...byDay.keys()].sort();
   const data = days.map(d => byDay.get(d).reduce((s, e) => s + e.total_tokens, 0));
   new Chart(document.getElementById("timeline-chart"), {
-    type: "bar",
-    data: { labels: days, datasets: [{ label: "Total tokens/day", data, backgroundColor: PALETTE[0] }] },
+    type: "line",
+    data: {
+      labels: days,
+      datasets: [{
+        label: "Total tokens/day",
+        data,
+        borderColor: PALETTE[0],
+        backgroundColor: PALETTE[0],
+        tension: 0.25,
+        pointRadius: 3,
+        fill: false,
+      }],
+    },
     options: { plugins: { legend: { display: false } } },
   });
 }
