@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Protocol
 
-from core.model import AgyRunResult, ClaudeCodeUsageEvent, TaskCall, UsageSnapshot
+from core.model import AgyRunResult, ClaudeCodeUsageEvent, TaskCall, UsageEvent, UsageSnapshot
 
 
 class UsageStore(Protocol):
@@ -15,6 +15,10 @@ class UsageStore(Protocol):
     def list_snapshots(self) -> list[UsageSnapshot]: ...
 
     def list_task_calls(self) -> list[TaskCall]: ...
+
+    def record_claude_code_event(self, event: ClaudeCodeUsageEvent) -> None: ...
+
+    def list_claude_code_events(self) -> list[ClaudeCodeUsageEvent]: ...
 
 
 class AgyRunner(Protocol):
