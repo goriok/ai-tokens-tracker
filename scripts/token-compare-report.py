@@ -8,11 +8,12 @@ Reads every tracked source through core.usage.collect_usage_events (source-
 agnostic — Claude Code, agy tracked calls, and any future adapter that
 produces UsageEvent) plus agy's quota snapshots, embeds them as JSON in a
 static HTML file, and opens it in the default browser. All comparison happens
-client-side: pick two or more date ranges directly in the page (e.g. "used
-recall-search Sep 1-3" vs "baseline Sep 4-6") and the page computes totals,
-per-request averages, cache-hit rate, and per-model/per-source breakdowns for
-each range — nothing about the ranges is stored, they're just a lens over
-data collected the normal way (claude-code-snapshot.py, agy-snapshot.py).
+client-side: pick two or more time ranges directly in the page, second-level
+precision, compared in raw UTC (e.g. "used recall-search 9am-noon" vs
+"baseline noon-3pm", same day) and the page computes totals, per-request
+averages, cache-hit rate, and per-model/per-source breakdowns for each range
+— nothing about the ranges is stored, they're just a lens over data collected
+the normal way (claude-code-snapshot.py, agy-snapshot.py).
 """
 from __future__ import annotations
 

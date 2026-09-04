@@ -27,7 +27,8 @@ tool-agnostic `UsageEvent` shape — reports/dashboards read that, not the raw p
 - `bash bin/agysnapshot` — record one quota snapshot now (normally run on a timer)
 - `bash bin/claudecodesnapshot` — record new Claude Code events now (normally run on a timer)
 - `bash bin/tokencompare` — generate and open a static HTML comparing token usage across
-  freely-picked date ranges (e.g. days using a RAG skill vs. without)
+  freely-picked time ranges, second-level precision, compared in raw UTC (e.g. a morning session
+  with a RAG skill on vs. an afternoon session without, same day)
 - `bash bin/tokendashboard` — same comparison, but as a live local server (auto-refreshes,
   needs `uv sync` once — the only command here with external dependencies)
 - `bash bin/agywidget` — launch the GTK always-on-top widget (Linux desktop only)

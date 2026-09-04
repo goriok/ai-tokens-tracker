@@ -27,11 +27,12 @@ consideradas — protobuf interno, LiteLLM, screen-scraping — todas rejeitadas
 - `scripts/agy-report.py` — gera um HTML standalone (Chart.js via CDN, sem servidor) com os
   dados coletados.
 - `scripts/token-compare-report.py` — gera um HTML standalone (snapshot único, sem servidor)
-  para comparar consumo de tokens entre janelas de tempo à mão livre (ex: dias em que usou
-  `/goriok-skills:recall-search` vs. dias sem), sem precisar marcar nada previamente — a seleção
-  dos períodos acontece na própria página. Unifica qualquer fonte com tokens por request
-  (`core/usage.collect_usage_events`), hoje Claude Code e chamadas rastreadas do agy. Para ver
-  dados novos é preciso rodar de novo — não atualiza sozinho.
+  para comparar consumo de tokens entre janelas de tempo à mão livre, com precisão de segundo
+  (ex: sessão de manhã com `/goriok-skills:recall-search` vs. sessão à tarde sem, no mesmo dia),
+  sem precisar marcar nada previamente — a seleção dos períodos acontece na própria página em
+  UTC. Unifica qualquer fonte com tokens por request (`core/usage.collect_usage_events`), hoje
+  Claude Code e chamadas rastreadas do agy. Para ver dados novos é preciso rodar de novo — não
+  atualiza sozinho.
 - `scripts/token_dashboard_server.py` — mesma comparação, mas como servidor local (FastAPI) que
   relê o SQLite a cada request: a página se atualiza sozinha a cada 15s via `/api/usage`, sem
   precisar regenerar arquivo. Única peça do projeto com dependências externas (fastapi/uvicorn) —
