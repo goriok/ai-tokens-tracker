@@ -2,13 +2,17 @@
 
 Rastreia o consumo de tokens/quota de agentes de IA — leve, sem custo de token para coletar.
 
-Hoje cobre o Google Antigravity CLI (`agy`), cobrindo o uso via TUI (não só chamadas `-p`).
-Outros agentes (Claude Code, hermes) estão planejados — ver "Limitações conhecidas" e a
-arquitetura hexagonal abaixo, pensada para receber um novo `AgentRunner` por agente sem reescrever
-o resto do pipeline.
+Cobre hoje o Google Antigravity CLI (`agy`, incluindo uso via TUI, não só chamadas `-p`) e o
+Claude Code (via transcripts locais). Outros agentes (hermes, opencode) estão planejados — ver
+"Limitações conhecidas" e a arquitetura hexagonal abaixo, pensada para receber um novo adapter por
+agente sem reescrever o resto do pipeline. `core/model.UsageEvent` normaliza qualquer fonte com
+tokens por request numa forma comum, então views/relatórios não precisam saber qual ferramenta
+gerou o dado.
 
 Ver `docs/madrs/` para o racional completo (por que `/usage` polling e não outras fontes
 consideradas — protobuf interno, LiteLLM, screen-scraping — todas rejeitadas).
+
+![Dashboard de uso de tokens, com timeline, comparação por janela de tempo e breakdown por modelo/fonte](docs/images/dashboard-screenshot.png)
 
 ## Como funciona
 
@@ -17,6 +21,9 @@ consideradas — protobuf interno, LiteLLM, screen-scraping — todas rejeitadas
   Pensado para rodar em cron/timer, ex. de hora em hora.
 - `scripts/agy-track.py` — wrapper opcional de `agy -p` para tarefas específicas: registra
   tokens exatos daquela chamada, com um label.
+- `scripts/claude-code-snapshot.py` — lê `~/.claude/projects/**/*.jsonl` (transcripts locais já
+  escritos pelo Claude Code, custo **zero** de token) e grava tokens exatos por request no
+  SQLite. Incremental via cursor de byte offset — seguro rodar com frequência (ex. a cada 5min).
 - `scripts/agy-report.py` — gera um HTML standalone (Chart.js via CDN, sem servidor) com os
   dados coletados.
 - `scripts/token-compare-report.py` — gera um HTML standalone (snapshot único, sem servidor)
@@ -45,14 +52,19 @@ uv run --group dev pytest
 
 ## Arquitetura
 
-Hexagonal (ports & adapters — ver `docs/madrs/MADR-002`):
+Hexagonal (ports & adapters — racional original em `docs/madrs/MADR-002`, hoje com um port a mais):
 
 ```
-core/interfaces.py         # portas: UsageStore, AgyRunner
-adapters/sqlite_usage_store.py   # único adapter de UsageStore hoje
-adapters/agy_cli_runner.py       # único adapter de AgyRunner hoje — outros agentes viram novos adapters
-scripts/                   # aplicação — usa só as portas, nunca sqlite3/subprocess direto
+core/interfaces.py                    # portas: UsageStore, AgyRunner, ClaudeCodeTranscriptReader
+core/usage.py                         # collect_usage_events — normaliza qualquer fonte pra UsageEvent
+adapters/sqlite_usage_store.py        # único adapter de UsageStore hoje
+adapters/agy_cli_runner.py            # único adapter de AgyRunner hoje
+adapters/claude_code_transcript_reader.py   # único adapter de ClaudeCodeTranscriptReader hoje
+scripts/                              # aplicação — usa só as portas, nunca sqlite3/subprocess direto
 ```
+
+Um agente novo (hermes, opencode) vira um adapter novo (porta existente ou nova, conforme o tipo
+de dado que ele expõe) — sem reescrever `scripts/` nem `core/usage.py`.
 
 ## Instalação
 
@@ -98,8 +110,9 @@ instalar.
 ## Uso
 
 ```bash
-agysnapshot   # registra um snapshot de quota agora (custo zero)
-agystatus     # gera e abre o relatório HTML
+agysnapshot     # registra um snapshot de quota agora (custo zero)
+claudecodesnapshot  # registra novos eventos do Claude Code agora (custo zero)
+agystatus       # gera e abre o relatório HTML
 tokencompare    # gera e abre o comparativo de janelas de tempo (snapshot único)
 tokendashboard  # sobe o comparativo como servidor local, se atualiza sozinho
 agywidget       # widget GTK always-on-top (Linux)
@@ -108,14 +121,15 @@ agydelegate --complexity low --task "revisão de PR" "revise este diff..."
 python3 scripts/agy-track.py --model gemini-3.7-flash-low --task "revisão de PR" "revise este diff..."
 ```
 
-Para coleta automática, agendar `agysnapshot` via cron ou systemd timer (ex. de hora em hora —
-a quota é semanal, alta frequência não agrega muito).
+Para coleta automática (sem precisar rodar os comandos à mão), instalar os units systemd —
+ver `systemd/README.md`.
 
 ## Limitações conhecidas
 
-- Só cobre o `agy` (Google Antigravity CLI) hoje — os nomes de comando (`agystatus`,
-  `agysnapshot`, `agywidget`, `agydelegate`) e o schema de dados ainda são específicos dele.
-  Suporte a outros agentes é planejado, sem data definida.
+- Cobre `agy` e Claude Code hoje — alguns nomes de comando (`agystatus`, `agysnapshot`,
+  `agywidget`, `agydelegate`) ainda carregam o prefixo `agy` por serem os mais antigos, mas o
+  schema de dados (`UsageEvent`) já é agnóstico de ferramenta. Suporte a hermes/opencode é
+  planejado, sem data definida.
 - `/usage` dá consumo agregado por grupo de modelo e janela semanal, não por tarefa individual.
   "Quantos tokens uma tarefa específica gastou" só é respondível para chamadas feitas via
   `agy-track.py`, não para uso via TUI.
