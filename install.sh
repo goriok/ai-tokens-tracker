@@ -12,7 +12,8 @@ ln -sf "$BASE/bin/agystatus" ~/.local/bin/agystatus
 ln -sf "$BASE/bin/agysnapshot" ~/.local/bin/agysnapshot
 ln -sf "$BASE/bin/agywidget" ~/.local/bin/agywidget
 ln -sf "$BASE/bin/agydelegate" ~/.local/bin/agydelegate
-echo "✅ Commands linked in ~/.local/bin: agystatus, agysnapshot, agywidget, agydelegate"
+ln -sf "$BASE/bin/claudecodesnapshot" ~/.local/bin/claudecodesnapshot
+echo "✅ Commands linked in ~/.local/bin: agystatus, agysnapshot, agywidget, agydelegate, claudecodesnapshot"
 
 echo ""
 echo "=== Next steps ==="

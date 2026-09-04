@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Protocol
 
-from core.model import AgyRunResult, TaskCall, UsageSnapshot
+from core.model import AgyRunResult, ClaudeCodeUsageEvent, TaskCall, UsageSnapshot
 
 
 class UsageStore(Protocol):
@@ -25,3 +25,11 @@ class AgyRunner(Protocol):
         ...
 
     def run_task(self, prompt: str, *, model: str, effort: str | None = None, skip_permissions: bool = False) -> AgyRunResult: ...
+
+
+class ClaudeCodeTranscriptReader(Protocol):
+    """Secondary/driven port for reading Claude Code session transcripts."""
+
+    def read_new_events(self) -> list[ClaudeCodeUsageEvent]:
+        """Every not-yet-seen assistant request across all transcripts, deduplicated by request_id."""
+        ...

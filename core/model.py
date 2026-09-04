@@ -38,3 +38,20 @@ class AgyRunResult:
     output_tokens: int
     thinking_tokens: int
     total_tokens: int
+
+
+@dataclass
+class ClaudeCodeUsageEvent:
+    """One deduplicated request from a Claude Code transcript (.jsonl line, type=assistant)."""
+
+    timestamp: str
+    session_id: str
+    project_slug: str
+    cwd: str | None
+    git_branch: str | None
+    model: str
+    request_id: str
+    input_tokens: int
+    output_tokens: int
+    cache_read_input_tokens: int
+    cache_creation_input_tokens: int
