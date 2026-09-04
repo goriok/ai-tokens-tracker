@@ -66,7 +66,10 @@ class SqliteUsageStore:
         env_path = os.environ.get("AGY_TOOL_DB")
         self._path = db_path or (Path(env_path) if env_path else DEFAULT_DB_PATH)
         self._path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-        self._conn = sqlite3.connect(self._path)
+        # check_same_thread=False: the dashboard server serves each request from
+        # a threadpool worker: SQLite itself serializes access, and each call
+        # here is a short-lived read/write with no cross-request shared state.
+        self._conn = sqlite3.connect(self._path, check_same_thread=False)
         self._conn.executescript(SCHEMA)
         os.chmod(self._path, 0o600)  # idempotent — also tightens pre-existing files
 

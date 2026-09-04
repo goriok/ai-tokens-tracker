@@ -1,0 +1,5 @@
+#!/bin/bash
+# Unlike the other bin/ commands, this one needs fastapi/uvicorn — run through
+# uv so it resolves the project's virtualenv instead of the bare system python3.
+PROJECT_DIR="$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)"
+cd "$PROJECT_DIR" && uv run scripts/token_dashboard_server.py "$@"
