@@ -64,9 +64,9 @@ INDEX_HTML = """<!doctype html>
   input[type=text] { font: inherit; font-size: 11px; padding: 2px 4px; width: 100px; }
   select { font: inherit; font-size: 11px; padding: 2px 4px; max-width: 110px; }
 
-  #content { flex: 1; min-height: 0; display: grid; grid-template-rows: minmax(0, 0.5fr) minmax(0, 1.6fr) minmax(0, 1fr); gap: 8px; }
+  #content { flex: 1; min-height: 0; display: grid; grid-template-rows: minmax(0, 0.45fr) minmax(0, 2fr) minmax(0, 0.8fr); gap: 8px; }
   .row-top { display: grid; grid-template-columns: 1fr; min-height: 0; }
-  .row-mid { display: grid; grid-template-columns: 0.8fr 1.6fr; gap: 8px; min-height: 0; }
+  .row-mid { display: grid; grid-template-columns: 0.55fr 1.85fr; gap: 8px; min-height: 0; }
   .row-bottom { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; min-height: 0; }
   .card canvas { max-height: 100%; }
   .card.chart-card { display: flex; flex-direction: column; min-height: 0; }
@@ -81,8 +81,15 @@ INDEX_HTML = """<!doctype html>
   .range-row .remove { margin-left: auto; color: GrayText; background: none; border: none; }
   .range-row input[type=text] { flex: 1; min-width: 60px; }
   .range-row select { flex: 1; min-width: 90px; max-width: none; }
+  .suggestions { display: flex; flex-direction: column; gap: 4px; }
+  .suggestions-heading { color: GrayText; font-size: 10px; text-transform: uppercase; letter-spacing: .02em; margin-bottom: 2px; }
+  .suggestion { text-align: left; background: none; border: 1px solid color-mix(in srgb, CanvasText 15%, transparent); border-radius: 4px; padding: 5px 8px; font-size: 11px; }
+  .suggestion:hover { background: color-mix(in srgb, CanvasText 6%, transparent); }
 
   .compare-card { display: flex; flex-direction: column; min-height: 0; gap: 6px; }
+  .compare-header { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .compare-header h2 { margin: 0; }
+  .compare-header label { display: flex; align-items: center; gap: 3px; font-size: 10px; color: GrayText; }
   .compare-chart { flex: 1; min-height: 0; position: relative; }
   .compare-grid { display: flex; gap: 6px; overflow-x: auto; flex: none; }
   .metric-card { border: 1px solid color-mix(in srgb, CanvasText 15%, transparent); border-radius: 6px; padding: 6px 8px; flex: 1; min-width: 140px; }
@@ -103,7 +110,7 @@ INDEX_HTML = """<!doctype html>
 
 <script>
 const PALETTE = ["#7aa2f7", "#9ece6a", "#e0af68", "#f7768e", "#bb9af7", "#7dcfff"];
-const REFRESH_MS = 15000;
+const REFRESH_MS = 30000;
 
 let EVENTS = [];
 let SNAPSHOTS = [];
@@ -175,21 +182,10 @@ function defaultWindow() {
   };
 }
 
+// No ranges by default — an empty list shows a "top 5 recent runs" picker
+// instead (see renderRangesList) so nothing is compared until you say so.
 function defaultRanges() {
-  const recentRuns = mostRecentNamedRuns(2);
-  if (recentRuns.length >= 2) {
-    return recentRuns
-      .slice()
-      .reverse()
-      .map(r => ({ id: nextId++, label: r.title, from: r.bounds.from, to: r.bounds.to }));
-  }
-
-  if (allTimestamps().length === 0) return [];
-  const { from, to } = defaultWindow();
-  return [
-    { id: nextId++, label: "range 1", from, to },
-    { id: nextId++, label: "range 2", from, to },
-  ];
+  return [];
 }
 
 function renderLayout() {
@@ -212,7 +208,11 @@ function renderLayout() {
         <datalist id="known-runs"></datalist>
       </div>
       <div class="card compare-card">
-        <h2>Comparison</h2>
+        <div class="compare-header">
+          <h2>Comparison</h2>
+          <label><input type="radio" name="breakdown-mode" value="cache" checked> cache vs. rest</label>
+          <label><input type="radio" name="breakdown-mode" value="io"> input/output/cache</label>
+        </div>
         <div class="compare-chart"><canvas id="compare-chart"></canvas></div>
         <div class="compare-grid" id="compare-grid"></div>
       </div>
@@ -227,6 +227,13 @@ function renderLayout() {
     const last = ts.length ? toDateTimeInput(ts[ts.length - 1]) : new Date().toISOString().slice(0, 19);
     ranges.push({ id: nextId++, label: `range ${ranges.length + 1}`, from: last, to: last });
     renderAll();
+  });
+
+  document.querySelectorAll('input[name="breakdown-mode"]').forEach(radio => {
+    radio.checked = radio.value === breakdownMode;
+    radio.addEventListener("change", () => {
+      if (radio.checked) { breakdownMode = radio.value; renderCompareChart(); }
+    });
   });
 
   const gwToggle = document.getElementById("global-window-toggle");
@@ -251,22 +258,8 @@ function renderLayout() {
   [gwFrom, gwArrow, gwTo].forEach(el => { el.hidden = !globalWindow.enabled; });
 }
 
-// Splits a label like "A1" into group "A" and position 1, so ranges can be
-// colored by group (not creation order) and charted paired by position.
-// Falls back to the whole label as its own group when there's no trailing
-// number (e.g. a free-text label typed by hand).
-function parseLabel(label) {
-  const m = /^(.*?)(\\d+)$/.exec(label || "");
-  if (!m) return { group: label || "", position: null };
-  return { group: m[1], position: parseInt(m[2], 10) };
-}
-
-function colorForLabel(label) {
-  const { group } = parseLabel(label);
-  const groups = [...new Set(ranges.map(r => parseLabel(r.label).group))];
-  const idx = groups.indexOf(group);
-  return PALETTE[(idx < 0 ? 0 : idx) % PALETTE.length];
-}
+// Each range is colored individually by creation order (see PALETTE[i % ...]
+// at each call site) — no grouping concept, a range is just a range.
 
 function groupBy(arr, keyFn) {
   const out = new Map();
@@ -342,7 +335,7 @@ function inGlobalWindow(ts) {
 // aggregation — each range is always one run, comparisons stay per-session.
 function eventsInRange(range) {
   if (globalWindow.enabled) {
-    const run = namedRuns().find(r => r.title === range.label);
+    const run = namedRuns().find(r => r.displayTitle === range.label);
     const pool = run ? run.events : EVENTS;
     return pool.filter(e => inGlobalWindow(e.timestamp));
   }
@@ -351,23 +344,36 @@ function eventsInRange(range) {
 
 // Unifies two ways a run can be named: a Claude Code session's custom
 // title (N events share it) and an agy TaskCall's --task label (1 event =
-// 1 label). Each becomes a { key, title, events } entry so the range
+// 1 label). Each becomes a { key, title, source, events } entry so the range
 // picker doesn't need to know which kind it's choosing between.
+//
+// displayTitle always includes source + start date ("A1 (claude-code,
+// 2026-09-04)") — two runs can share a bare title (different sources, or a
+// typo like naming two sessions "A1"), and matching by title alone would
+// silently pick whichever came first. Matching is always done against
+// displayTitle, never the bare title.
 function namedRuns() {
   const bySession = SESSION_TITLES.map(t => ({
     key: `session:${t.session_id}`,
     title: t.title,
+    source: "claude-code",
     events: EVENTS.filter(e => e.session_id === t.session_id),
   }));
   const agyLabels = [...new Set(EVENTS.filter(e => e.source === "agy" && e.label).map(e => e.label))];
   const byLabel = agyLabels.map(label => ({
     key: `label:${label}`,
     title: label,
+    source: "agy",
     events: EVENTS.filter(e => e.source === "agy" && e.label === label),
   }));
   return [...bySession, ...byLabel]
     .filter(r => r.events.length > 0)
-    .sort((a, b) => a.title.localeCompare(b.title));
+    .map(r => {
+      const ts = r.events.map(e => e.timestamp).sort();
+      const day = ts.length > 0 ? toDateInput(ts[0]) : "?";
+      return { ...r, displayTitle: `${r.title} (${r.source}, ${day})` };
+    })
+    .sort((a, b) => a.displayTitle.localeCompare(b.displayTitle));
 }
 
 function timestampBoundsForRun(run) {
@@ -384,11 +390,12 @@ function renderRangesList() {
   if (datalist) {
     datalist.replaceChildren(...runs.map(run => {
       const opt = document.createElement("option");
-      opt.value = run.title;
+      opt.value = run.displayTitle;
       return opt;
     }));
   }
-  list.replaceChildren(...ranges.map((r, i) => {
+
+  const children = ranges.map((r, i) => {
     const row = document.createElement("div");
     row.className = "range-row";
 
@@ -397,7 +404,7 @@ function renderRangesList() {
 
     const swatch = document.createElement("span");
     swatch.className = "swatch";
-    swatch.style.background = colorForLabel(r.label);
+    swatch.style.background = PALETTE[i % PALETTE.length];
     identity.appendChild(swatch);
 
     const label = document.createElement("input");
@@ -407,7 +414,7 @@ function renderRangesList() {
     label.placeholder = "label or session/run name";
     label.addEventListener("input", () => { r.label = label.value; renderCompareChart(); renderCompare(); });
     label.addEventListener("change", () => {
-      const run = runs.find(x => x.title === label.value);
+      const run = runs.find(x => x.displayTitle === label.value);
       if (!run) return;
       const bounds = timestampBoundsForRun(run);
       if (!bounds) return;
@@ -452,7 +459,37 @@ function renderRangesList() {
     }
 
     return row;
-  }));
+  });
+
+  const usedLabels = new Set(ranges.map(r => r.label));
+  const suggestions = mostRecentNamedRuns(5 + usedLabels.size).filter(run => !usedLabels.has(run.displayTitle)).slice(0, 5);
+  if (suggestions.length > 0) {
+    const wrap = document.createElement("div");
+    wrap.className = "suggestions";
+    const heading = document.createElement("div");
+    heading.className = "suggestions-heading";
+    heading.textContent = "Recent sessions/runs — click to add";
+    wrap.appendChild(heading);
+    suggestions.forEach(run => {
+      const btn = document.createElement("button");
+      btn.className = "suggestion";
+      btn.textContent = `${run.displayTitle} (${run.events.length} req.)`;
+      btn.addEventListener("click", () => {
+        ranges.push({ id: nextId++, label: run.displayTitle, from: run.bounds.from, to: run.bounds.to });
+        renderAll();
+      });
+      wrap.appendChild(btn);
+    });
+    children.push(wrap);
+  } else if (ranges.length === 0) {
+    const empty = document.createElement("p");
+    empty.className = "empty";
+    empty.style.padding = "12px 0";
+    empty.textContent = "No named sessions/runs yet.";
+    children.push(empty);
+  }
+
+  list.replaceChildren(...children);
 }
 
 function quotaConsumedInRange(range) {
@@ -482,47 +519,64 @@ function computeRangeMetrics(range) {
   const cacheHitRate = (inputTokens + cacheRead) > 0 ? cacheRead / (inputTokens + cacheRead) : 0;
   const sessions = new Set(events.map(e => e.session_id).filter(Boolean)).size;
   const quota = quotaConsumedInRange(range);
-  return { requests: events.length, sessions, totalTokens, tokensSemCacheRead, cacheHitRate, quota };
+  return { requests: events.length, sessions, totalTokens, tokensSemCacheRead, inputTokens, outputTokens, cacheRead, cacheCreation, cacheHitRate, quota };
 }
 
 let compareChart = null;
+let breakdownMode = "cache";
 
-// One line per group (parsed from each range's label, e.g. "A1"/"B1" ->
-// groups "A"/"B"), x-axis = position within the group (1, 2, 3, ...) instead
-// of creation order — makes paired comparisons (A1 vs B1, A2 vs B2, ...)
-// read as parallel series instead of a misleading single timeline.
+function earliestTimestamp(range) {
+  const ts = eventsInRange(range).map(e => e.timestamp).sort();
+  return ts.length > 0 ? ts[0] : null;
+}
+
+// A lighter tint of a range's base color, for the "less interesting" part of
+// a stacked segment (e.g. cache_read — already-paid-for reuse) so the darker
+// full-color segment draws the eye to what actually cost something new.
+function lighten(hex, amount) {
+  const n = parseInt(hex.slice(1), 16);
+  const r = (n >> 16) & 0xff, g = (n >> 8) & 0xff, b = n & 0xff;
+  const mix = c => Math.round(c + (255 - c) * amount);
+  return `rgb(${mix(r)}, ${mix(g)}, ${mix(b)})`;
+}
+
+// Horizontal bars, one per range, ordered by real start time — total tokens
+// is a magnitude per range, not a continuous series, so bars compare
+// magnitude directly without a line implying a trend that isn't there.
+// Stacked into segments (cache vs. rest, or input/output/cache) so each
+// range's own color still identifies it, tinted lighter for cache_read.
 function renderCompareChart() {
-  const parsed = ranges.map(r => ({ range: r, ...parseLabel(r.label), metrics: computeRangeMetrics(r) }));
-  const groups = [...new Set(parsed.map(p => p.group))];
-  const positions = [...new Set(parsed.map(p => p.position !== null ? p.position : p.range.label))].sort((a, b) => {
-    if (typeof a === "number" && typeof b === "number") return a - b;
-    return String(a).localeCompare(String(b));
-  });
+  const points = ranges
+    .map((r, i) => ({ range: r, i, metrics: computeRangeMetrics(r), t: earliestTimestamp(r) }))
+    .filter(p => p.t !== null)
+    .sort((a, b) => a.t.localeCompare(b.t));
 
-  const datasets = groups.map((group, i) => {
-    const byPosition = new Map(parsed.filter(p => p.group === group).map(p => [p.position !== null ? p.position : p.range.label, p]));
-    return {
-      label: group.trim() || "(no group)",
-      data: positions.map(pos => byPosition.has(pos) ? byPosition.get(pos).metrics.totalTokens : null),
-      borderColor: PALETTE[i % PALETTE.length],
-      backgroundColor: PALETTE[i % PALETTE.length],
-      tension: 0.25,
-      pointRadius: 4,
-      fill: false,
-      spanGaps: false,
-    };
-  });
+  const labels = points.map(p => p.range.label);
+  const colors = points.map(p => PALETTE[p.i % PALETTE.length]);
+
+  const datasets = breakdownMode === "cache"
+    ? [
+        { label: "Sem cache_read", data: points.map(p => p.metrics.tokensSemCacheRead), backgroundColor: colors },
+        { label: "Cache read", data: points.map(p => p.metrics.cacheRead), backgroundColor: colors.map(c => lighten(c, 0.55)) },
+      ]
+    : [
+        { label: "Input", data: points.map(p => p.metrics.inputTokens), backgroundColor: colors },
+        { label: "Output", data: points.map(p => p.metrics.outputTokens), backgroundColor: colors.map(c => lighten(c, 0.25)) },
+        { label: "Cache creation", data: points.map(p => p.metrics.cacheCreation), backgroundColor: colors.map(c => lighten(c, 0.45)) },
+        { label: "Cache read", data: points.map(p => p.metrics.cacheRead), backgroundColor: colors.map(c => lighten(c, 0.65)) },
+      ];
 
   if (compareChart) compareChart.destroy();
   compareChart = new Chart(document.getElementById("compare-chart"), {
-    type: "line",
-    data: { labels: positions, datasets },
+    type: "bar",
+    data: { labels, datasets },
     options: {
+      indexAxis: "y",
       maintainAspectRatio: false,
-      plugins: { legend: { labels: { boxWidth: 10, font: { size: 10 } } } },
+      plugins: { legend: { labels: { boxWidth: 10, font: { size: 9 } } } },
       scales: {
-        x: { title: { display: true, text: "position", font: { size: 9 } } },
-        y: { title: { display: true, text: "total tokens", font: { size: 9 } }, ticks: { font: { size: 9 } } },
+        x: { stacked: true, title: { display: true, text: "total tokens", font: { size: 9 } }, ticks: { font: { size: 9 } } },
+        y: { stacked: true, ticks: { font: { size: 9 } } },
       },
     },
   });
@@ -536,7 +590,7 @@ function renderCompare() {
     const card = document.createElement("div");
     card.className = "metric-card";
     card.innerHTML = `
-      <div class="name"><span class="swatch" style="background:${colorForLabel(r.label)}"></span>${escapeHtml(r.label)}</div>
+      <div class="name"><span class="swatch" style="background:${PALETTE[i % PALETTE.length]}"></span>${escapeHtml(r.label)}</div>
       <dl>
         <dt>Requests</dt><dd>${m.requests.toLocaleString()}</dd>
         <dt>Sessions</dt><dd>${m.sessions.toLocaleString()}</dd>
