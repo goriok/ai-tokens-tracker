@@ -59,6 +59,15 @@ class ClaudeCodeUsageEvent:
 
 
 @dataclass
+class SessionTitle:
+    """A session's custom title (`claude -n <name>`), keyed by session_id — lets
+    the dashboard filter/label runs by name instead of raw timestamps."""
+
+    session_id: str
+    title: str
+
+
+@dataclass
 class UsageEvent:
     """One tool-agnostic unit of token usage, normalized from any source
     adapter (Claude Code transcripts, agy tracked calls, future tools). Views
@@ -74,6 +83,7 @@ class UsageEvent:
     cache_read_tokens: int
     cache_creation_tokens: int
     agent_id: str | None = None
+    label: str | None = None
 
     @property
     def total_tokens(self) -> int:
@@ -106,4 +116,5 @@ def usage_event_from_task_call(call: TaskCall) -> UsageEvent:
         output_tokens=call.output_tokens,
         cache_read_tokens=0,
         cache_creation_tokens=0,
+        label=call.task or None,
     )

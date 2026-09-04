@@ -32,6 +32,7 @@ def build_dashboard_payload(store: UsageStore) -> dict:
                 "cache_read_tokens": e.cache_read_tokens,
                 "cache_creation_tokens": e.cache_creation_tokens,
                 "total_tokens": e.total_tokens,
+                "label": e.label,
             }
             for e in collect_usage_events(store)
         ],
@@ -43,5 +44,8 @@ def build_dashboard_payload(store: UsageStore) -> dict:
                 "reset_time": s.reset_time,
             }
             for s in store.list_snapshots()
+        ],
+        "session_titles": [
+            {"session_id": t.session_id, "title": t.title} for t in store.list_session_titles()
         ],
     }

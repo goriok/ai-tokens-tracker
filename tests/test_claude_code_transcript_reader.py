@@ -75,3 +75,24 @@ def test_read_new_events_recurses_into_subagents_directory(tmp_path):
     assert len(events) == 1
     assert events[0].agent_id == "agent-xyz"
     store.close()
+
+
+def test_read_new_events_records_custom_title_for_session(tmp_path):
+    store = SqliteUsageStore(db_path=tmp_path / "usage.db")
+    projects_dir = tmp_path / "projects"
+    project_dir = projects_dir / "proj-a"
+    project_dir.mkdir(parents=True)
+    lines = (
+        json.dumps({"type": "custom-title", "customTitle": "A1", "sessionId": "sess-1"}) + "\n"
+        + _assistant_line(requestId="req-4")
+    )
+    (project_dir / "sess-1.jsonl").write_text(lines)
+
+    reader = ClaudeCodeTranscriptReader(store, projects_dir=projects_dir)
+    reader.read_new_events()
+
+    titles = store.list_session_titles()
+    assert len(titles) == 1
+    assert titles[0].session_id == "sess-1"
+    assert titles[0].title == "A1"
+    store.close()

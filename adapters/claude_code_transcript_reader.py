@@ -6,7 +6,7 @@ import sys
 from pathlib import Path
 
 from adapters.sqlite_usage_store import SqliteUsageStore
-from core.model import ClaudeCodeUsageEvent
+from core.model import ClaudeCodeUsageEvent, SessionTitle
 
 DEFAULT_PROJECTS_DIR = Path.home() / ".claude" / "projects"
 
@@ -40,6 +40,10 @@ class ClaudeCodeTranscriptReader:
         with path.open("r", encoding="utf-8") as fh:
             fh.seek(offset)
             for line in fh:
+                title = self._parse_title_line(line)
+                if title is not None:
+                    self._store.record_session_title(title)
+                    continue
                 event = self._parse_line(project_slug, line, seen_request_ids)
                 if event is not None:
                     events.append(event)
@@ -47,6 +51,25 @@ class ClaudeCodeTranscriptReader:
 
         self._store.set_claude_code_cursor(key, new_offset)
         return events
+
+    @staticmethod
+    def _parse_title_line(line: str) -> SessionTitle | None:
+        line = line.strip()
+        if not line:
+            return None
+        try:
+            record = json.loads(line)
+        except json.JSONDecodeError:
+            return None
+
+        if record.get("type") != "custom-title":
+            return None
+
+        session_id = record.get("sessionId")
+        title = record.get("customTitle")
+        if not session_id or not title:
+            return None
+        return SessionTitle(session_id=session_id, title=title)
 
     @staticmethod
     def _parse_line(project_slug: str, line: str, seen_request_ids: set[str]) -> ClaudeCodeUsageEvent | None:

@@ -1,7 +1,7 @@
 import pytest
 
 from adapters.sqlite_usage_store import SqliteUsageStore
-from core.model import ClaudeCodeUsageEvent
+from core.model import ClaudeCodeUsageEvent, SessionTitle
 
 
 @pytest.fixture
@@ -45,3 +45,23 @@ def test_record_claude_code_event_dedupes_by_request_id(store):
 
     assert len(events) == 1
     assert events[0].timestamp == "2026-09-01T10:00:00Z"
+
+
+def test_record_and_list_session_title_roundtrips(store):
+    store.record_session_title(SessionTitle(session_id="sess-1", title="A1"))
+
+    titles = store.list_session_titles()
+
+    assert len(titles) == 1
+    assert titles[0].session_id == "sess-1"
+    assert titles[0].title == "A1"
+
+
+def test_record_session_title_upserts_on_same_session_id(store):
+    store.record_session_title(SessionTitle(session_id="sess-1", title="old-name"))
+    store.record_session_title(SessionTitle(session_id="sess-1", title="new-name"))
+
+    titles = store.list_session_titles()
+
+    assert len(titles) == 1
+    assert titles[0].title == "new-name"

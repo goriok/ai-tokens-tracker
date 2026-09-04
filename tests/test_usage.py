@@ -1,12 +1,13 @@
-from core.model import ClaudeCodeUsageEvent, TaskCall, UsageSnapshot
+from core.model import ClaudeCodeUsageEvent, SessionTitle, TaskCall, UsageSnapshot
 from core.usage import build_dashboard_payload, collect_usage_events
 
 
 class FakeUsageStore:
-    def __init__(self, claude_code_events=(), task_calls=(), snapshots=()):
+    def __init__(self, claude_code_events=(), task_calls=(), snapshots=(), session_titles=()):
         self._claude_code_events = list(claude_code_events)
         self._task_calls = list(task_calls)
         self._snapshots = list(snapshots)
+        self._session_titles = list(session_titles)
 
     def list_claude_code_events(self):
         return self._claude_code_events
@@ -16,6 +17,9 @@ class FakeUsageStore:
 
     def list_snapshots(self):
         return self._snapshots
+
+    def list_session_titles(self):
+        return self._session_titles
 
 
 def _cc_event(timestamp, request_id="req-1"):
@@ -34,7 +38,7 @@ def _cc_event(timestamp, request_id="req-1"):
     )
 
 
-def _task_call(timestamp):
+def _task_call(timestamp, task=""):
     return TaskCall(
         timestamp=timestamp,
         model="gemini-3.7-flash-low",
@@ -44,7 +48,7 @@ def _task_call(timestamp):
         thinking_tokens=0,
         total_tokens=30,
         duration_s=1.0,
-        task="",
+        task=task,
     )
 
 
@@ -101,4 +105,20 @@ def test_build_dashboard_payload_empty_store():
 
     payload = build_dashboard_payload(store)
 
-    assert payload == {"events": [], "snapshots": []}
+    assert payload == {"events": [], "snapshots": [], "session_titles": []}
+
+
+def test_build_dashboard_payload_includes_session_titles():
+    store = FakeUsageStore(session_titles=[SessionTitle(session_id="sess-1", title="A1")])
+
+    payload = build_dashboard_payload(store)
+
+    assert payload["session_titles"] == [{"session_id": "sess-1", "title": "A1"}]
+
+
+def test_build_dashboard_payload_includes_task_call_label():
+    store = FakeUsageStore(task_calls=[_task_call("2026-09-01T08:00:00Z", task="A1")])
+
+    payload = build_dashboard_payload(store)
+
+    assert payload["events"][0]["label"] == "A1"

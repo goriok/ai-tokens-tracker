@@ -4,7 +4,7 @@ import os
 import sqlite3
 from pathlib import Path
 
-from core.model import ClaudeCodeUsageEvent, TaskCall, UsageSnapshot
+from core.model import ClaudeCodeUsageEvent, SessionTitle, TaskCall, UsageSnapshot
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS usage_snapshots (
@@ -54,6 +54,11 @@ CREATE INDEX IF NOT EXISTS idx_cc_usage_project ON claude_code_usage_events(proj
 CREATE TABLE IF NOT EXISTS claude_code_read_cursors (
     file_path TEXT PRIMARY KEY,
     byte_offset INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS session_titles (
+    session_id TEXT PRIMARY KEY,
+    title TEXT NOT NULL
 );
 """
 
@@ -176,6 +181,18 @@ class SqliteUsageStore:
                 " ON CONFLICT(file_path) DO UPDATE SET byte_offset = excluded.byte_offset",
                 (file_path, byte_offset),
             )
+
+    def record_session_title(self, title: SessionTitle) -> None:
+        with self._conn:
+            self._conn.execute(
+                "INSERT INTO session_titles (session_id, title) VALUES (?, ?)"
+                " ON CONFLICT(session_id) DO UPDATE SET title = excluded.title",
+                (title.session_id, title.title),
+            )
+
+    def list_session_titles(self) -> list[SessionTitle]:
+        cur = self._conn.execute("SELECT session_id, title FROM session_titles")
+        return [SessionTitle(*row) for row in cur.fetchall()]
 
     def close(self) -> None:
         self._conn.close()
