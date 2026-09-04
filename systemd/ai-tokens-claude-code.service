@@ -1,0 +1,6 @@
+[Unit]
+Description=ai-tokens-tracker — Claude Code transcript collection (one-shot)
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 %h/sources/goriok/ai-token-tracker/scripts/claude-code-snapshot.py

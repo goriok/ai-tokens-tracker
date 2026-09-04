@@ -1,0 +1,6 @@
+[Unit]
+Description=ai-tokens-tracker — agy quota snapshot (one-shot)
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 %h/sources/goriok/ai-token-tracker/scripts/agy-snapshot.py

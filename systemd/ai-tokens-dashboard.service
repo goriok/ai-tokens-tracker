@@ -1,0 +1,13 @@
+[Unit]
+Description=ai-tokens-tracker — live token dashboard server
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/sources/goriok/ai-token-tracker
+ExecStart=%h/.local/bin/uv run scripts/token_dashboard_server.py
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target
