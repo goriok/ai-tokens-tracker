@@ -34,39 +34,52 @@ INDEX_HTML = """<!doctype html>
         crossorigin="anonymous"></script>
 <style>
   :root { color-scheme: light dark; }
-  body { font-family: system-ui, sans-serif; margin: 0; padding: 24px; background: Canvas; color: CanvasText; }
-  h1 { font-size: 18px; margin: 0 0 4px; }
-  h2 { font-size: 13px; margin: 0 0 12px; font-weight: 600; }
-  .sub { color: GrayText; font-size: 13px; margin-bottom: 24px; }
+  html, body { height: 100%; }
+  body {
+    font-family: system-ui, sans-serif; margin: 0; padding: 10px 14px;
+    background: Canvas; color: CanvasText; box-sizing: border-box;
+    display: flex; flex-direction: column; gap: 8px; overflow: hidden;
+  }
+  h1 { font-size: 14px; margin: 0; display: inline; font-weight: 600; }
+  h2 { font-size: 11px; margin: 0 0 6px; font-weight: 600; color: GrayText; text-transform: uppercase; letter-spacing: .02em; }
+  .topbar { display: flex; align-items: baseline; gap: 10px; flex: none; }
+  .sub { color: GrayText; font-size: 11px; }
   .empty { color: GrayText; font-size: 14px; padding: 40px 0; text-align: center; }
-  .card { border: 1px solid color-mix(in srgb, CanvasText 15%, transparent); border-radius: 8px; padding: 16px; margin-bottom: 24px; }
-  table { width: 100%; border-collapse: collapse; font-size: 13px; }
-  th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid color-mix(in srgb, CanvasText 10%, transparent); }
+  .card { border: 1px solid color-mix(in srgb, CanvasText 15%, transparent); border-radius: 6px; padding: 8px 10px; min-height: 0; }
+  table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  th, td { text-align: left; padding: 4px 6px; border-bottom: 1px solid color-mix(in srgb, CanvasText 10%, transparent); }
   th { color: GrayText; font-weight: 500; }
   td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
-  button { font: inherit; padding: 4px 10px; cursor: pointer; }
-  input[type=date] { font: inherit; padding: 3px 6px; }
-  input[type=text] { font: inherit; padding: 3px 6px; width: 140px; }
+  button { font: inherit; font-size: 11px; padding: 2px 8px; cursor: pointer; }
+  input[type=date] { font: inherit; font-size: 11px; padding: 2px 4px; }
+  input[type=text] { font: inherit; font-size: 11px; padding: 2px 4px; width: 100px; }
 
-  .ranges { display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px; }
-  .range-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-  .range-row .swatch { width: 10px; height: 10px; border-radius: 50%; flex: none; }
+  #content { flex: 1; min-height: 0; display: grid; grid-template-rows: minmax(0, 1.1fr) minmax(0, 1fr); gap: 8px; }
+  .row-top { display: grid; grid-template-columns: 1.3fr 1fr; gap: 8px; min-height: 0; }
+  .row-bottom { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; min-height: 0; }
+  .card canvas { max-height: 100%; }
+  .card.chart-card { display: flex; flex-direction: column; min-height: 0; }
+  .card.chart-card > div { flex: 1; min-height: 0; position: relative; }
+
+  .ranges { display: flex; flex-direction: column; gap: 4px; margin-bottom: 6px; overflow-y: auto; }
+  .range-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+  .range-row .swatch { width: 8px; height: 8px; border-radius: 50%; flex: none; }
   .range-row .remove { margin-left: auto; color: GrayText; background: none; border: none; }
 
-  .compare-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; }
-  .metric-card { border: 1px solid color-mix(in srgb, CanvasText 15%, transparent); border-radius: 8px; padding: 14px; }
-  .metric-card .name { display: flex; align-items: center; gap: 6px; font-weight: 600; font-size: 13px; margin-bottom: 10px; }
-  .metric-card .swatch { width: 10px; height: 10px; border-radius: 50%; flex: none; }
-  .metric-card dl { margin: 0; display: grid; grid-template-columns: auto auto; gap: 4px 12px; font-size: 13px; }
+  .compare-grid { display: flex; gap: 8px; overflow-x: auto; height: 100%; }
+  .metric-card { border: 1px solid color-mix(in srgb, CanvasText 15%, transparent); border-radius: 6px; padding: 8px 10px; flex: 1; min-width: 150px; }
+  .metric-card .name { display: flex; align-items: center; gap: 5px; font-weight: 600; font-size: 11px; margin-bottom: 5px; }
+  .metric-card .swatch { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+  .metric-card dl { margin: 0; display: grid; grid-template-columns: auto auto; gap: 2px 8px; font-size: 11px; }
   .metric-card dt { color: GrayText; }
   .metric-card dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; }
-
-  .breakdown-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
 </style>
 </head>
 <body>
-<h1>token usage — live dashboard</h1>
-<div class="sub" id="generated-at">loading…</div>
+<div class="topbar">
+  <h1>token usage — live dashboard</h1>
+  <div class="sub" id="generated-at">loading…</div>
+</div>
 
 <div id="content"></div>
 
@@ -130,22 +143,21 @@ function defaultRanges() {
 function renderLayout() {
   const content = document.getElementById("content");
   content.innerHTML = `
-    <div class="card">
-      <h2>Timeline</h2>
-      <canvas id="timeline-chart" height="80"></canvas>
+    <div class="row-top">
+      <div class="card chart-card"><h2>Timeline</h2><div><canvas id="timeline-chart"></canvas></div></div>
+      <div class="card" style="display:flex;flex-direction:column;">
+        <h2>Ranges to compare</h2>
+        <div class="ranges" id="ranges-list"></div>
+        <button id="add-range">+ add range</button>
+      </div>
     </div>
-    <div class="card">
-      <h2>Ranges to compare</h2>
-      <div class="ranges" id="ranges-list"></div>
-      <button id="add-range">+ add range</button>
-    </div>
-    <div class="card">
-      <h2>Comparison</h2>
-      <div class="compare-grid" id="compare-grid"></div>
-    </div>
-    <div class="breakdown-grid">
-      <div class="card"><h2>Total tokens by model</h2><canvas id="model-chart"></canvas></div>
-      <div class="card"><h2>Total tokens by source</h2><canvas id="source-chart"></canvas></div>
+    <div class="row-bottom">
+      <div class="card" style="overflow-y:auto;">
+        <h2>Comparison</h2>
+        <div class="compare-grid" id="compare-grid"></div>
+      </div>
+      <div class="card chart-card"><h2>Total tokens by model</h2><div><canvas id="model-chart"></canvas></div></div>
+      <div class="card chart-card"><h2>Total tokens by source</h2><div><canvas id="source-chart"></canvas></div></div>
     </div>
   `;
   document.getElementById("add-range").addEventListener("click", () => {
@@ -174,9 +186,20 @@ function renderTimeline() {
   const data = days.map(d => byDay.get(d).reduce((s, e) => s + e.total_tokens, 0));
   if (timelineChart) timelineChart.destroy();
   timelineChart = new Chart(document.getElementById("timeline-chart"), {
-    type: "bar",
-    data: { labels: days, datasets: [{ label: "Total tokens/day", data, backgroundColor: PALETTE[0] }] },
-    options: { plugins: { legend: { display: false } } },
+    type: "line",
+    data: {
+      labels: days,
+      datasets: [{
+        label: "Total tokens/day",
+        data,
+        borderColor: PALETTE[0],
+        backgroundColor: PALETTE[0],
+        tension: 0.25,
+        pointRadius: 3,
+        fill: false,
+      }],
+    },
+    options: { maintainAspectRatio: false, plugins: { legend: { display: false } } },
   });
 }
 
@@ -285,7 +308,11 @@ function renderBreakdowns() {
   modelChart = new Chart(document.getElementById("model-chart"), {
     type: "bar",
     data: { labels, datasets: modelDatasets },
-    options: { responsive: true, scales: { x: { stacked: true }, y: { stacked: true } } },
+    options: {
+      maintainAspectRatio: false,
+      plugins: { legend: { labels: { boxWidth: 10, font: { size: 10 } } } },
+      scales: { x: { stacked: true }, y: { stacked: true } },
+    },
   });
 
   const sources = [...new Set(EVENTS.map(e => e.source))];
@@ -298,7 +325,11 @@ function renderBreakdowns() {
   sourceChart = new Chart(document.getElementById("source-chart"), {
     type: "bar",
     data: { labels, datasets: sourceDatasets },
-    options: { responsive: true, scales: { x: { stacked: true }, y: { stacked: true } } },
+    options: {
+      maintainAspectRatio: false,
+      plugins: { legend: { labels: { boxWidth: 10, font: { size: 10 } } } },
+      scales: { x: { stacked: true }, y: { stacked: true } },
+    },
   });
 }
 
