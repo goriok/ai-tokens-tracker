@@ -128,6 +128,56 @@ async function fetchUsage() {
   SESSION_TITLES = data.session_titles || [];
 }
 
+// URL params let a dashboard link pre-load a specific comparison instead of
+// starting from the empty picker — e.g. share a link straight to one
+// experiment round's ranges. Supported params:
+//   prefix=<text>   add one range per known session/run whose title starts
+//                    with <text> (matched against the bare title, not
+//                    displayTitle, so it doesn't need the "(source, date)"
+//                    suffix) — the common case, one param covers N runs.
+//   ranges=a,b,c    add one range per exact displayTitle, comma-separated
+//                    (URL-encode commas/parens inside a title if needed).
+//   global=0|1      overrides the default global-window toggle.
+//   from=, to=      datetime-local values (YYYY-MM-DDTHH:MM:SS) for the
+//                    global window — only applied when provided.
+function rangesFromUrlParams() {
+  const params = new URLSearchParams(window.location.search);
+  const runs = namedRuns();
+  const out = [];
+  const seen = new Set();
+
+  const prefix = params.get("prefix");
+  if (prefix) {
+    runs.filter(r => r.title.startsWith(prefix)).forEach(r => {
+      if (seen.has(r.displayTitle)) return;
+      seen.add(r.displayTitle);
+      out.push(r);
+    });
+  }
+
+  const explicit = params.get("ranges");
+  if (explicit) {
+    explicit.split(",").map(s => s.trim()).filter(Boolean).forEach(title => {
+      const run = runs.find(r => r.displayTitle === title || r.title === title);
+      if (!run || seen.has(run.displayTitle)) return;
+      seen.add(run.displayTitle);
+      out.push(run);
+    });
+  }
+
+  return out.map(run => {
+    const bounds = timestampBoundsForRun(run);
+    return { id: nextId++, label: run.displayTitle, from: bounds ? bounds.from : "", to: bounds ? bounds.to : "" };
+  });
+}
+
+function applyGlobalWindowFromUrlParams() {
+  const params = new URLSearchParams(window.location.search);
+  if (params.has("global")) globalWindow.enabled = params.get("global") !== "0";
+  if (params.has("from")) globalWindow.from = params.get("from");
+  if (params.has("to")) globalWindow.to = params.get("to");
+}
+
 async function tick() {
   await fetchUsage();
   document.getElementById("generated-at").textContent =
@@ -144,7 +194,10 @@ async function tick() {
       globalWindow.from = from;
       globalWindow.to = to;
     }
+    applyGlobalWindowFromUrlParams();
     ranges = defaultRanges();
+    const urlRanges = rangesFromUrlParams();
+    if (urlRanges.length > 0) ranges = urlRanges;
     renderLayout();
     initialized = true;
   }
