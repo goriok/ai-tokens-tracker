@@ -210,7 +210,7 @@ function renderLayout() {
       <div class="card compare-card">
         <div class="compare-header">
           <h2>Comparison</h2>
-          <label><input type="radio" name="breakdown-mode" value="cache" checked> cache vs. rest</label>
+          <label><input type="radio" name="breakdown-mode" value="cache" checked> cache hit vs. miss</label>
           <label><input type="radio" name="breakdown-mode" value="io"> input/output/cache</label>
         </div>
         <div class="compare-chart"><canvas id="compare-chart"></canvas></div>
@@ -543,8 +543,8 @@ function lighten(hex, amount) {
 // Horizontal bars, one per range, ordered by real start time — total tokens
 // is a magnitude per range, not a continuous series, so bars compare
 // magnitude directly without a line implying a trend that isn't there.
-// Stacked into segments (cache vs. rest, or input/output/cache) so each
-// range's own color still identifies it, tinted lighter for cache_read.
+// Stacked into segments (cache hit vs. miss, or input/output/cache) so each
+// range's own color still identifies it, tinted lighter for cache reuse.
 function renderCompareChart() {
   const points = ranges
     .map((r, i) => ({ range: r, i, metrics: computeRangeMetrics(r), t: earliestTimestamp(r) }))
@@ -556,14 +556,14 @@ function renderCompareChart() {
 
   const datasets = breakdownMode === "cache"
     ? [
-        { label: "Sem cache_read", data: points.map(p => p.metrics.tokensSemCacheRead), backgroundColor: colors },
-        { label: "Cache read", data: points.map(p => p.metrics.cacheRead), backgroundColor: colors.map(c => lighten(c, 0.55)) },
+        { label: "Cache miss", data: points.map(p => p.metrics.tokensSemCacheRead), backgroundColor: colors },
+        { label: "Cache hit", data: points.map(p => p.metrics.cacheRead), backgroundColor: colors.map(c => lighten(c, 0.55)) },
       ]
     : [
         { label: "Input", data: points.map(p => p.metrics.inputTokens), backgroundColor: colors },
         { label: "Output", data: points.map(p => p.metrics.outputTokens), backgroundColor: colors.map(c => lighten(c, 0.25)) },
         { label: "Cache creation", data: points.map(p => p.metrics.cacheCreation), backgroundColor: colors.map(c => lighten(c, 0.45)) },
-        { label: "Cache read", data: points.map(p => p.metrics.cacheRead), backgroundColor: colors.map(c => lighten(c, 0.65)) },
+        { label: "Cache hit", data: points.map(p => p.metrics.cacheRead), backgroundColor: colors.map(c => lighten(c, 0.65)) },
       ];
 
   if (compareChart) compareChart.destroy();
@@ -595,7 +595,7 @@ function renderCompare() {
         <dt>Requests</dt><dd>${m.requests.toLocaleString()}</dd>
         <dt>Sessions</dt><dd>${m.sessions.toLocaleString()}</dd>
         <dt>Total tokens</dt><dd>${m.totalTokens.toLocaleString()}</dd>
-        <dt>Sem cache_read</dt><dd>${m.tokensSemCacheRead.toLocaleString()}</dd>
+        <dt>Cache miss</dt><dd>${m.tokensSemCacheRead.toLocaleString()}</dd>
         <dt>Tokens/request</dt><dd>${m.requests ? Math.round(m.totalTokens / m.requests).toLocaleString() : "–"}</dd>
         <dt>Cache-hit rate</dt><dd>${(m.cacheHitRate * 100).toFixed(1)}%</dd>
         <dt>agy quota consumed</dt><dd>${(m.quota * 100).toFixed(1)}%</dd>

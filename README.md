@@ -138,6 +138,10 @@ ver `systemd/README.md`.
   planejado, sem data definida.
 - `/usage` dá consumo agregado por grupo de modelo e janela semanal, não por tarefa individual.
   "Quantos tokens uma tarefa específica gastou" só é respondível para chamadas feitas via
-  `agy-track.py`, não para uso via TUI.
+  `agy-track.py`/`agy-delegate.py`, não para uso via TUI — investigado em 2026-09: `agy` não
+  grava tokens por sessão em nenhum arquivo local (`~/.gemini/antigravity-cli/history.jsonl` só
+  tem o prompt digitado; `brain/<id>/.system_generated/logs/transcript*.jsonl` registra passos
+  (thinking/tool_calls) sem contagem de tokens; `log/*.log` só tem log de execução de CLI) —
+  diferente do Claude Code, cujo transcript `.jsonl` sempre inclui `usage` por request.
 - Se o `agy` mudar o schema de saída de `/usage`, a coleta falha alto (não grava dado
   inconsistente silenciosamente) — ver `AgyCliRunner.fetch_usage`.
