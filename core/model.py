@@ -26,6 +26,7 @@ class TaskCall:
     total_tokens: int
     duration_s: float
     task: str
+    cache_read_tokens: int = 0
 
 
 @dataclass
@@ -38,6 +39,7 @@ class AgyRunResult:
     output_tokens: int
     thinking_tokens: int
     total_tokens: int
+    cache_read_tokens: int = 0
 
 
 @dataclass
@@ -114,7 +116,7 @@ def usage_event_from_task_call(call: TaskCall) -> UsageEvent:
         project=None,
         input_tokens=call.input_tokens,
         output_tokens=call.output_tokens,
-        cache_read_tokens=0,
+        cache_read_tokens=call.cache_read_tokens,
         cache_creation_tokens=0,
         label=call.task or None,
     )

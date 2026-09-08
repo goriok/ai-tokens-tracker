@@ -27,7 +27,8 @@ CREATE TABLE IF NOT EXISTS task_calls (
     thinking_tokens INTEGER NOT NULL DEFAULT 0,
     total_tokens INTEGER NOT NULL DEFAULT 0,
     duration_s REAL NOT NULL DEFAULT 0,
-    task TEXT NOT NULL DEFAULT ''
+    task TEXT NOT NULL DEFAULT '',
+    cache_read_tokens INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_task_calls_timestamp ON task_calls(timestamp);
 CREATE INDEX IF NOT EXISTS idx_task_calls_model ON task_calls(model);
@@ -92,6 +93,14 @@ class SqliteUsageStore:
         self._conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_cc_usage_agent ON claude_code_usage_events(agent_id)"
         )
+        try:
+            with self._conn:
+                self._conn.execute(
+                    "ALTER TABLE task_calls ADD COLUMN cache_read_tokens INTEGER NOT NULL DEFAULT 0"
+                )
+        except sqlite3.OperationalError as exc:
+            if "duplicate column" not in str(exc):
+                raise
 
     def record_snapshot(self, snapshot: UsageSnapshot) -> None:
         with self._conn:
@@ -105,8 +114,9 @@ class SqliteUsageStore:
         with self._conn:
             self._conn.execute(
                 "INSERT INTO task_calls"
-                " (timestamp, model, status, input_tokens, output_tokens, thinking_tokens, total_tokens, duration_s, task)"
-                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                " (timestamp, model, status, input_tokens, output_tokens, thinking_tokens, total_tokens,"
+                " duration_s, task, cache_read_tokens)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     call.timestamp,
                     call.model,
@@ -117,6 +127,7 @@ class SqliteUsageStore:
                     call.total_tokens,
                     call.duration_s,
                     call.task,
+                    call.cache_read_tokens,
                 ),
             )
 
@@ -130,7 +141,7 @@ class SqliteUsageStore:
     def list_task_calls(self) -> list[TaskCall]:
         cur = self._conn.execute(
             "SELECT timestamp, model, status, input_tokens, output_tokens, thinking_tokens,"
-            " total_tokens, duration_s, task FROM task_calls ORDER BY timestamp"
+            " total_tokens, duration_s, task, cache_read_tokens FROM task_calls ORDER BY timestamp"
         )
         return [TaskCall(*row) for row in cur.fetchall()]
 

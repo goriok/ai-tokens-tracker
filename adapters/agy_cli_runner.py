@@ -58,4 +58,5 @@ class AgyCliRunner:
             output_tokens=usage.get("output_tokens", 0),
             thinking_tokens=usage.get("thinking_tokens", 0),
             total_tokens=usage.get("total_tokens", 0),
+            cache_read_tokens=usage.get("cache_read_tokens", 0),
         )

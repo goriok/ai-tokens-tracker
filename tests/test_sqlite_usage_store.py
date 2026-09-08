@@ -1,7 +1,7 @@
 import pytest
 
 from adapters.sqlite_usage_store import SqliteUsageStore
-from core.model import ClaudeCodeUsageEvent, SessionTitle
+from core.model import ClaudeCodeUsageEvent, SessionTitle, TaskCall
 
 
 @pytest.fixture
@@ -65,3 +65,26 @@ def test_record_session_title_upserts_on_same_session_id(store):
 
     assert len(titles) == 1
     assert titles[0].title == "new-name"
+
+
+def test_record_and_list_task_call_roundtrips_cache_read_tokens(store):
+    store.record_task_call(
+        TaskCall(
+            timestamp="2026-09-04T21:27:52Z",
+            model="gemini-3.8-flash-medium",
+            status="SUCCESS",
+            input_tokens=33636,
+            output_tokens=758,
+            thinking_tokens=200,
+            total_tokens=34394,
+            duration_s=11.1,
+            task="A1",
+            cache_read_tokens=8108,
+        )
+    )
+
+    calls = store.list_task_calls()
+
+    assert len(calls) == 1
+    assert calls[0].task == "A1"
+    assert calls[0].cache_read_tokens == 8108

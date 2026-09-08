@@ -53,6 +53,7 @@ def main() -> None:
                 total_tokens=result.total_tokens,
                 duration_s=duration_s,
                 task=(args.task or args.prompt)[:200],
+                cache_read_tokens=result.cache_read_tokens,
             )
         )
         print(result.response)

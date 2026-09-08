@@ -60,9 +60,10 @@ def test_usage_event_from_task_call_normalizes_fields():
         input_tokens=400,
         output_tokens=100,
         thinking_tokens=25,
-        total_tokens=500,
+        total_tokens=650,
         duration_s=3.2,
         task="revisão de PR",
+        cache_read_tokens=150,
     )
 
     result = usage_event_from_task_call(call)
@@ -74,10 +75,28 @@ def test_usage_event_from_task_call_normalizes_fields():
     assert result.project is None
     assert result.input_tokens == 400
     assert result.output_tokens == 100
-    assert result.cache_read_tokens == 0
+    assert result.cache_read_tokens == 150
     assert result.cache_creation_tokens == 0
-    assert result.total_tokens == 500
+    assert result.total_tokens == 650
     assert result.label == "revisão de PR"
+
+
+def test_usage_event_from_task_call_cache_read_defaults_to_zero():
+    call = TaskCall(
+        timestamp="2026-09-02T08:00:00Z",
+        model="gemini-3.7-flash-low",
+        status="SUCCESS",
+        input_tokens=400,
+        output_tokens=100,
+        thinking_tokens=25,
+        total_tokens=500,
+        duration_s=3.2,
+        task="revisão de PR",
+    )
+
+    result = usage_event_from_task_call(call)
+
+    assert result.cache_read_tokens == 0
 
 
 def test_usage_event_from_task_call_label_none_when_task_empty():
