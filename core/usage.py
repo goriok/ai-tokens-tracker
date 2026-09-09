@@ -58,9 +58,6 @@ def build_dashboard_payload(store: UsageStore, since: str | None = None, until: 
                 "cache_creation_measured": e.cache_creation_measured,
                 "total_tokens": e.total_tokens,
                 "label": e.label,
-                "experiment_id": e.experiment_id,
-                "question_id": e.question_id,
-                "strategy": e.strategy,
                 "confidence_score": e.confidence_score,
             }
             for e in events

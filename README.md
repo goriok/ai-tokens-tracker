@@ -40,9 +40,9 @@ consideradas — protobuf interno, LiteLLM, screen-scraping — todas rejeitadas
   request: a página se atualiza sozinha a cada 30s via `/api/usage`, sem precisar regenerar
   arquivo. Unifica qualquer fonte com tokens por request (`core/usage.collect_usage_events`),
   hoje Claude Code e chamadas rastreadas do agy. Suporta parâmetros de URL (`?prefix=`,
-  `?ranges=`, `?global=`, `?from=`, `?to=`) para pré-carregar uma comparação específica sem
-  precisar montá-la na UI a cada vez. Única peça do projeto com dependências externas
-  (fastapi/uvicorn) — roda via `uv run`, não `python3` puro.
+  `?sessions=`, `?tool=`, `?from=`/`?to=`, `?since=`/`?until=`) para pré-carregar uma comparação
+  específica sem precisar montá-la na UI a cada vez. Única peça do projeto com dependências
+  externas (fastapi/uvicorn) — roda via `uv run`, não `python3` puro.
 - `scripts/agy-widget-gtk.py` — widget GTK3 always-on-top (Linux desktop), mostra quota atual
   e chamadas rastreadas do dia.
 - `scripts/agy-delegate.py` — roda uma tarefa via `agy -p`, escolhendo o modelo automaticamente

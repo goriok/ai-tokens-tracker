@@ -132,33 +132,7 @@ def test_task_call_source_defaults_to_agy(store):
     assert calls[0].source == "agy"
 
 
-def test_record_and_list_task_call_roundtrips_experiment_fields(store):
-    store.record_task_call(
-        TaskCall(
-            timestamp="2026-09-09T14:30:00Z",
-            model="mai-code-1.1-flash",
-            status="SUCCESS",
-            input_tokens=100,
-            output_tokens=10,
-            thinking_tokens=0,
-            total_tokens=110,
-            duration_s=3.0,
-            task="rag-vs-manual-single-call|q1|codigo-direto",
-            experiment_id="rag-vs-manual-single-call",
-            question_id="q1",
-            strategy="codigo-direto",
-        )
-    )
-
-    calls = store.list_task_calls()
-
-    assert calls[0].experiment_id == "rag-vs-manual-single-call"
-    assert calls[0].question_id == "q1"
-    assert calls[0].strategy == "codigo-direto"
-    assert calls[0].confidence_score is None
-
-
-def test_task_call_experiment_fields_default_to_none(store):
+def test_task_call_confidence_score_defaults_to_none(store):
     store.record_task_call(
         TaskCall(
             timestamp="2026-09-04T21:27:52Z",
@@ -175,9 +149,6 @@ def test_task_call_experiment_fields_default_to_none(store):
 
     calls = store.list_task_calls()
 
-    assert calls[0].experiment_id is None
-    assert calls[0].question_id is None
-    assert calls[0].strategy is None
     assert calls[0].confidence_score is None
 
 

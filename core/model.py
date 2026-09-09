@@ -29,14 +29,9 @@ class TaskCall:
     cache_read_tokens: int = 0
     source: str = "agy"
     cache_creation_tokens: int = 0
-    experiment_id: str | None = None
-    question_id: str | None = None
-    strategy: str | None = None
     confidence_score: float | None = None
-    """Structured experiment metadata, all optional — None for any call that
-    doesn't come from a tracked experiment run (the vast majority of rows).
-    confidence_score is typically filled in later via an update, after the
-    confidence-analysis validation runs (not known at record_task_call time)."""
+    """Filled in later via an update, after the confidence-analysis
+    validation runs (not known at record_task_call time)."""
 
 
 @dataclass
@@ -126,14 +121,9 @@ class UsageEvent:
     because it's unmeasured, not because it's confirmed zero. Keeping this
     explicit stops agy from silently reading as cheaper than sources (Claude
     Code, Copilot) that do report this cost."""
-    experiment_id: str | None = None
-    question_id: str | None = None
-    strategy: str | None = None
     confidence_score: float | None = None
-    """Structured experiment metadata for copilot/agy TaskCalls that recorded
-    it. None for claude-code (parsed client-side from the session title
-    instead — see friendlyExperimentLabel in the dashboard) and for any
-    event outside a tracked experiment run."""
+    """From copilot/agy TaskCalls that recorded it. None for claude-code and
+    for any event with no confidence-analysis score."""
 
     @property
     def total_tokens(self) -> int:
@@ -184,8 +174,5 @@ def usage_event_from_task_call(call: TaskCall) -> UsageEvent:
         # agy's CLI output has no cache-write field — 0 is "unmeasured".
         # Copilot and Claude Code both report this genuinely.
         cache_creation_measured=call.source != "agy",
-        experiment_id=call.experiment_id,
-        question_id=call.question_id,
-        strategy=call.strategy,
         confidence_score=call.confidence_score,
     )

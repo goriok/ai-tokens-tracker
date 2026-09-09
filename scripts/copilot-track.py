@@ -26,9 +26,6 @@ def main() -> None:
     parser.add_argument("prompt")
     parser.add_argument("--model", default="auto")
     parser.add_argument("--task", default="", help="Short label for this call, defaults to the prompt")
-    parser.add_argument("--experiment-id", default=None, help="Structured experiment identifier, e.g. 'rag-vs-manual-single-call'")
-    parser.add_argument("--question-id", default=None, help="Structured question identifier within the experiment, e.g. 'q1'")
-    parser.add_argument("--strategy", default=None, help="Structured strategy/arm identifier, e.g. 'codigo-direto'")
     args = parser.parse_args()
 
     runner = CopilotCliRunner()
@@ -52,9 +49,6 @@ def main() -> None:
                 cache_read_tokens=result.cache_read_tokens,
                 cache_creation_tokens=result.cache_creation_tokens,
                 source="copilot",
-                experiment_id=args.experiment_id,
-                question_id=args.question_id,
-                strategy=args.strategy,
             )
         )
         print(result.response)

@@ -31,9 +31,6 @@ CREATE TABLE IF NOT EXISTS task_calls (
     cache_read_tokens INTEGER NOT NULL DEFAULT 0,
     source TEXT NOT NULL DEFAULT 'agy',
     cache_creation_tokens INTEGER NOT NULL DEFAULT 0,
-    experiment_id TEXT,
-    question_id TEXT,
-    strategy TEXT,
     confidence_score REAL
 );
 CREATE INDEX IF NOT EXISTS idx_task_calls_timestamp ON task_calls(timestamp);
@@ -142,21 +139,12 @@ class SqliteUsageStore:
         except sqlite3.OperationalError as exc:
             if "duplicate column" not in str(exc):
                 raise
-        for column, decl in (
-            ("experiment_id", "TEXT"),
-            ("question_id", "TEXT"),
-            ("strategy", "TEXT"),
-            ("confidence_score", "REAL"),
-        ):
-            try:
-                with self._conn:
-                    self._conn.execute(f"ALTER TABLE task_calls ADD COLUMN {column} {decl}")
-            except sqlite3.OperationalError as exc:
-                if "duplicate column" not in str(exc):
-                    raise
-        self._conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_task_calls_experiment ON task_calls(experiment_id)"
-        )
+        try:
+            with self._conn:
+                self._conn.execute("ALTER TABLE task_calls ADD COLUMN confidence_score REAL")
+        except sqlite3.OperationalError as exc:
+            if "duplicate column" not in str(exc):
+                raise
 
     def record_snapshot(self, snapshot: UsageSnapshot) -> None:
         with self._conn:
@@ -171,9 +159,8 @@ class SqliteUsageStore:
             self._conn.execute(
                 "INSERT INTO task_calls"
                 " (timestamp, model, status, input_tokens, output_tokens, thinking_tokens, total_tokens,"
-                " duration_s, task, cache_read_tokens, source, cache_creation_tokens,"
-                " experiment_id, question_id, strategy, confidence_score)"
-                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                " duration_s, task, cache_read_tokens, source, cache_creation_tokens, confidence_score)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     call.timestamp,
                     call.model,
@@ -187,9 +174,6 @@ class SqliteUsageStore:
                     call.cache_read_tokens,
                     call.source,
                     call.cache_creation_tokens,
-                    call.experiment_id,
-                    call.question_id,
-                    call.strategy,
                     call.confidence_score,
                 ),
             )
@@ -199,7 +183,7 @@ class SqliteUsageStore:
         time the score isn't known yet (confidence-analysis hasn't run).
         Matches by task label; if the same label was used more than once,
         every matching row is updated (labels are expected unique per
-        experiment item in practice, per the round-prefix convention)."""
+        round-prefix convention)."""
         with self._conn:
             self._conn.execute(
                 "UPDATE task_calls SET confidence_score = ? WHERE task = ?",
@@ -217,7 +201,7 @@ class SqliteUsageStore:
         cur = self._conn.execute(
             "SELECT timestamp, model, status, input_tokens, output_tokens, thinking_tokens,"
             " total_tokens, duration_s, task, cache_read_tokens, source, cache_creation_tokens,"
-            " experiment_id, question_id, strategy, confidence_score"
+            " confidence_score"
             " FROM task_calls ORDER BY timestamp"
         )
         return [TaskCall(*row) for row in cur.fetchall()]
