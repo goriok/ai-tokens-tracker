@@ -9,7 +9,7 @@ ExecStart=%h/.local/bin/victoria-metrics \
   -storageDataPath=%h/.local/share/ai-tokens-tracker/vm-data \
   -promscrape.config=%h/sources/goriok/ai-token-tracker/systemd/vm-scrape.yaml \
   -httpListenAddr=127.0.0.1:8428 \
-  -retentionPeriod=100y
+  -retentionPeriod=60d
 Restart=on-failure
 RestartSec=5
 

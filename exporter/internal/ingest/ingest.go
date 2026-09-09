@@ -34,12 +34,27 @@ type Result struct {
 func collectRawSamples(src *sqlitesource.Source, after checkpoint.State) (raws []metrics.RawSample, badRows int, newCheckpoint checkpoint.State, err error) {
 	newCheckpoint = after
 
+	// session_titles has no cursor (see Source.SessionTitles) — read
+	// wholesale every cycle and build a lookup for the session_name label.
+	// Small table (order of hundreds of rows even at heavy use), cheap to
+	// re-read; a session named after this event's row was read would just
+	// show up with an empty session_name until the next cycle, which is a
+	// fine outcome for an optional, best-effort label.
+	titles, err := src.SessionTitles()
+	if err != nil {
+		return nil, 0, after, fmt.Errorf("read session_titles: %w", err)
+	}
+	titleBySession := make(map[string]string, len(titles))
+	for _, t := range titles {
+		titleBySession[t.SessionID] = t.Title
+	}
+
 	ccEvents, ccMax, ccBad, err := src.ClaudeCodeEventsSince(after.ClaudeCodeUsageEvents)
 	if err != nil {
 		return nil, 0, after, fmt.Errorf("read claude_code_usage_events: %w", err)
 	}
 	for _, e := range ccEvents {
-		raws = append(raws, metrics.ClaudeCodeSamples(e)...)
+		raws = append(raws, metrics.ClaudeCodeSamples(e, titleBySession[e.SessionID])...)
 	}
 	newCheckpoint.ClaudeCodeUsageEvents = ccMax
 	badRows += ccBad

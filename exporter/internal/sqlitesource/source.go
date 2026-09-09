@@ -256,3 +256,32 @@ func (s *Source) UsageSnapshotsSince(afterID int64) (snapshots []model.UsageSnap
 	}
 	return snapshots, maxID, badRows, nil
 }
+
+// SessionTitles reads session_titles wholesale — this table has no
+// autoincrement id (it's upsert-by-session_id in the Python schema:
+// adapters/sqlite_usage_store.py's record_session_title does
+// "ON CONFLICT(session_id) DO UPDATE"), so there's no cursor to advance and
+// no notion of "new since." It's small (order of hundreds of rows even at
+// heavy use — one per session someone bothered to name) and cheap to
+// re-read every ingest cycle; callers build a session_id -> title map from
+// this to attach the session_name label when mapping Claude Code events.
+func (s *Source) SessionTitles() ([]model.SessionTitle, error) {
+	rows, err := s.db.Query(`SELECT session_id, title FROM session_titles`)
+	if err != nil {
+		return nil, fmt.Errorf("query session_titles: %w", err)
+	}
+	defer rows.Close()
+
+	var titles []model.SessionTitle
+	for rows.Next() {
+		var t model.SessionTitle
+		if err := rows.Scan(&t.SessionID, &t.Title); err != nil {
+			return nil, fmt.Errorf("scan session_titles row: %w", err)
+		}
+		titles = append(titles, t)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate session_titles: %w", err)
+	}
+	return titles, nil
+}

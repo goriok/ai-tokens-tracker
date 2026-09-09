@@ -83,6 +83,7 @@ func TestBackfill_SortsGloballyDespiteOutOfOrderInsertion(t *testing.T) {
 			{Name: "project", Value: "proj-a"},
 			{Name: "git_branch", Value: "main"},
 			{Name: "agent_kind", Value: metrics.AgentKindMain},
+			{Name: "session_name", Value: "morning-refactor"}, // fixture names req-1's session (sess-1)
 			{Name: "token_type", Value: metrics.TokenTypeInput},
 		},
 		Timestamp: time.Now(),
@@ -90,6 +91,58 @@ func TestBackfill_SortsGloballyDespiteOutOfOrderInsertion(t *testing.T) {
 	})
 	if got.Value != 100 {
 		t.Errorf("seeded running total for req-1's series = %v, want 100 (req-1's input_tokens)", got.Value)
+	}
+}
+
+func TestBackfill_SessionNameJoinsCorrectlyAndDefaultsToEmpty(t *testing.T) {
+	src := openFixtureSource(t)
+	store := openTempStore(t)
+
+	_, err := Backfill(src, store, checkpoint.State{}, false, "2026-09-09T18:00:00Z")
+	if err != nil {
+		t.Fatalf("Backfill: %v", err)
+	}
+
+	// sess-1 (req-1, req-2) is named "morning-refactor" in the fixture;
+	// sess-0 (req-3) is not named — must come through as empty, not missing
+	// or some placeholder value.
+	acc := metrics.NewAccumulator()
+	store.SeedAccumulator(acc)
+
+	named := acc.Apply(metrics.RawSample{
+		Metric: metrics.TokensTotal,
+		Labels: metrics.Labels{
+			{Name: "source", Value: "claude-code"},
+			{Name: "model", Value: "claude-sonnet-5"},
+			{Name: "project", Value: "proj-a"},
+			{Name: "git_branch", Value: "main"},
+			{Name: "agent_kind", Value: metrics.AgentKindMain},
+			{Name: "session_name", Value: "morning-refactor"},
+			{Name: "token_type", Value: metrics.TokenTypeInput},
+		},
+		Timestamp: time.Now(),
+		Delta:     0,
+	})
+	if named.Value != 100 {
+		t.Errorf("named session's running total = %v, want 100", named.Value)
+	}
+
+	unnamed := acc.Apply(metrics.RawSample{
+		Metric: metrics.TokensTotal,
+		Labels: metrics.Labels{
+			{Name: "source", Value: "claude-code"},
+			{Name: "model", Value: "claude-haiku-4-5-20251001"},
+			{Name: "project", Value: "proj-b"},
+			{Name: "git_branch", Value: ""},
+			{Name: "agent_kind", Value: metrics.AgentKindMain},
+			{Name: "session_name", Value: ""},
+			{Name: "token_type", Value: metrics.TokenTypeInput},
+		},
+		Timestamp: time.Now(),
+		Delta:     0,
+	})
+	if unnamed.Value != 10 {
+		t.Errorf("unnamed session's running total = %v, want 10 (req-3's input_tokens)", unnamed.Value)
 	}
 }
 

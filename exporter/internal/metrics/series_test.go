@@ -36,17 +36,34 @@ func TestClaudeCodeSamples_NeverLabelsHighCardinalityFields(t *testing.T) {
 		InputTokens:  1,
 		OutputTokens: 1,
 	}
-	names := labelNames(ClaudeCodeSamples(e))
+	names := labelNames(ClaudeCodeSamples(e, "my-session"))
 
 	for _, forbidden := range []string{"session_id", "agent_id", "request_id"} {
 		if names[forbidden] {
 			t.Errorf("label set must not include %q (high cardinality), got %v", forbidden, names)
 		}
 	}
-	for _, required := range []string{"source", "model", "project", "git_branch", "agent_kind", "token_type"} {
+	for _, required := range []string{"source", "model", "project", "git_branch", "agent_kind", "token_type", "session_name"} {
 		if !names[required] {
 			t.Errorf("label set missing %q, got %v", required, names)
 		}
+	}
+}
+
+func TestClaudeCodeSamples_SessionNameLabelReflectsArgument(t *testing.T) {
+	// session_name is opt-in and bounded by how often someone names a run
+	// (unlike session_id/agent_id) — see MADR-003. Empty when unnamed, the
+	// common case.
+	e := model.ClaudeCodeEvent{Timestamp: fixedTime, Model: "m", ProjectSlug: "p"}
+
+	unnamed := ClaudeCodeSamples(e, "")
+	if got := labelValue(unnamed[0].Labels, "session_name"); got != "" {
+		t.Errorf("unnamed session_name = %q, want empty", got)
+	}
+
+	named := ClaudeCodeSamples(e, "morning-refactor")
+	if got := labelValue(named[0].Labels, "session_name"); got != "morning-refactor" {
+		t.Errorf("named session_name = %q, want morning-refactor", got)
 	}
 }
 
@@ -60,7 +77,7 @@ func TestClaudeCodeSamples_FourTokenTypesEachEvent(t *testing.T) {
 		CacheReadInputTokens:     10,
 		CacheCreationInputTokens: 5,
 	}
-	samples := ClaudeCodeSamples(e)
+	samples := ClaudeCodeSamples(e, "")
 	if len(samples) != 4 {
 		t.Fatalf("len(samples) = %d, want 4 (one per token_type)", len(samples))
 	}
@@ -92,8 +109,8 @@ func TestClaudeCodeSamples_FourTokenTypesEachEvent(t *testing.T) {
 }
 
 func TestClaudeCodeSamples_AgentKindReflectsSubagent(t *testing.T) {
-	main := ClaudeCodeSamples(model.ClaudeCodeEvent{Timestamp: fixedTime, Model: "m", ProjectSlug: "p"})
-	sub := ClaudeCodeSamples(model.ClaudeCodeEvent{Timestamp: fixedTime, Model: "m", ProjectSlug: "p", AgentID: "agent-1"})
+	main := ClaudeCodeSamples(model.ClaudeCodeEvent{Timestamp: fixedTime, Model: "m", ProjectSlug: "p"}, "")
+	sub := ClaudeCodeSamples(model.ClaudeCodeEvent{Timestamp: fixedTime, Model: "m", ProjectSlug: "p", AgentID: "agent-1"}, "")
 
 	if got := labelValue(main[0].Labels, "agent_kind"); got != AgentKindMain {
 		t.Errorf("main event agent_kind = %q, want %q", got, AgentKindMain)

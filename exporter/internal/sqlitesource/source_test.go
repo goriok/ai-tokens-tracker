@@ -158,6 +158,21 @@ func TestUsageSnapshotsSince(t *testing.T) {
 	}
 }
 
+func TestSessionTitles(t *testing.T) {
+	s := openFixture(t)
+
+	titles, err := s.SessionTitles()
+	if err != nil {
+		t.Fatalf("SessionTitles: %v", err)
+	}
+	if len(titles) != 1 {
+		t.Fatalf("len(titles) = %d, want 1 (only sess-1 is named in the fixture)", len(titles))
+	}
+	if titles[0].SessionID != "sess-1" || titles[0].Title != "morning-refactor" {
+		t.Errorf("titles[0] = %+v, want {sess-1 morning-refactor}", titles[0])
+	}
+}
+
 func TestOpen_ReadOnly_RejectsMissingFile(t *testing.T) {
 	// mode=ro against a nonexistent file must fail at Ping, not silently
 	// create an empty database (the default rwc mode would).

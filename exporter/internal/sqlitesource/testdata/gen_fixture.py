@@ -14,7 +14,7 @@ REPO_ROOT = Path(__file__).resolve().parents[4]
 sys.path.insert(0, str(REPO_ROOT))
 
 from adapters.sqlite_usage_store import SqliteUsageStore
-from core.model import ClaudeCodeUsageEvent, CopilotUsageEvent, TaskCall, UsageSnapshot
+from core.model import ClaudeCodeUsageEvent, CopilotUsageEvent, SessionTitle, TaskCall, UsageSnapshot
 
 FIXTURE_PATH = Path(__file__).resolve().parent / "fixture.db"
 
@@ -72,6 +72,10 @@ def main() -> None:
             cache_creation_input_tokens=0,
         )
     )
+
+    # sess-1 is named (`claude -n <name>`); sess-0 is left unnamed —
+    # exercises both the present and absent case for the session_name label.
+    store.record_session_title(SessionTitle(session_id="sess-1", title="morning-refactor"))
 
     store.record_copilot_event(
         CopilotUsageEvent(

@@ -71,3 +71,13 @@ type UsageSnapshot struct {
 	RemainingFraction float64
 	ResetTime         string
 }
+
+// SessionTitle is one row of session_titles — an optional user-assigned
+// name for a session (`claude -n <name>`), keyed by session_id. Unlike the
+// other tables here it has no autoincrement id (it's an upsert-by-session_id
+// table in the Python schema), so it's read wholesale rather than by cursor
+// — see Source.SessionTitles.
+type SessionTitle struct {
+	SessionID string
+	Title     string
+}

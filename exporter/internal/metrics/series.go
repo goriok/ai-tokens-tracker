@@ -50,13 +50,24 @@ type RawSample struct {
 // still get a sample, so the series exists and rate()/increase() over it
 // isn't sparse) plus nothing else: Claude Code always measures all 4
 // dimensions, so no CacheCreationMeasured gauge sample is needed here.
-func ClaudeCodeSamples(e model.ClaudeCodeEvent) []RawSample {
+//
+// sessionName is the optional user-assigned title (`claude -n <name>`,
+// core session_titles table) for e's session — empty when the session was
+// never named, which is the common case (95 of ~330 sessions measured had
+// one). Accepted as a free-text label deliberately, unlike session_id
+// (267 distinct values) and agent_id (524): a session name is opt-in and
+// intentional, so its growth is bounded by how often someone actually
+// names a run, not by request/session volume. See MADR-003 for the
+// retention story that keeps this from accumulating forever regardless
+// (VictoriaMetrics' retentionPeriod, not this package).
+func ClaudeCodeSamples(e model.ClaudeCodeEvent, sessionName string) []RawSample {
 	base := Labels{
 		{Name: "source", Value: "claude-code"},
 		{Name: "model", Value: e.Model},
 		{Name: "project", Value: e.ProjectSlug},
 		{Name: "git_branch", Value: e.GitBranch},
 		{Name: "agent_kind", Value: AgentKind(e.AgentID)},
+		{Name: "session_name", Value: sessionName},
 	}
 	return tokenSamples(base, e.Timestamp, e.InputTokens, e.OutputTokens, e.CacheReadInputTokens, e.CacheCreationInputTokens)
 }

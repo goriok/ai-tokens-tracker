@@ -118,15 +118,28 @@ métrica à mão; isso também resolve, na query e não no código, a divergênc
 o backend (`core/model.py`, soma as 4 dimensões) e o frontend do dashboard (soma 3 por padrão,
 exclui `cache_creation`).
 
-Labels: `source`, `model`, `project`, `git_branch`, `agent_kind`, `token_type`. Cardinalidade
-medida no banco real: `source × model × project` → 60 combinações; `model × project ×
-git_branch × agent_kind` → 104. Multiplicado por `token_type` (4), fica na faixa de 250–450
+Labels: `source`, `model`, `project`, `git_branch`, `agent_kind`, `session_name`, `token_type`.
+Cardinalidade medida no banco real: `source × model × project` → 60 combinações; `model × project
+× git_branch × agent_kind` → 104. Multiplicado por `token_type` (4), fica na faixa de 250–450
 séries ativas — trivial.
 
 `agent_kind` (`main`/`sub`, derivado de `agent_id != ""`) substitui o `agent_id` cru (524 valores
 medidos, cardinalidade inviável como label) — mantém a distinção analiticamente útil (22% dos
 eventos do Claude Code são de subagentes) sem explodir a cardinalidade. Ficam **fora** dos
 labels, por cardinalidade: `session_id` (267), `agent_id` cru (524), `request_id` (22.387).
+
+**`session_name` é a exceção deliberada a essa regra**, e vale explicar por quê. É o título
+opcional atribuído via `claude -n <nome>` (tabela `session_titles`, chaveada por `session_id`,
+sem cursor — lida por inteiro a cada ciclo de ingestão via `Source.SessionTitles`, tabela pequena
+o bastante para isso ser barato). Diferente de `session_id`/`agent_id`, seu crescimento não é
+proporcional ao volume de requests ou sessões — é proporcional a quantas vezes alguém digitou um
+nome de propósito (95 de ~330 sessões medidas tinham título). Ainda assim, é texto livre sem teto
+superior formal, então a mitigação não é excluir o label — é **retenção por tempo no
+VictoriaMetrics** (`retentionPeriod=60d` no unit systemd): séries de sessões nomeadas há mais de
+60 dias somem do VM/Perses sozinhas, sem exigir compactação no storage próprio do exporter (que
+continua guardando o histórico completo, reimportável a qualquer momento via `export-vm`). Sessão
+sem título vira `session_name=""`, não ausência do label — mantém a série existente e consultável
+por igual.
 
 `aitokens_cache_creation_measured{source}` (gauge, 0/1) preserva a distinção que
 `core/model.py`'s `cache_creation_measured` já modela: para `source=agy`, `cache_creation_tokens`
@@ -141,6 +154,31 @@ restante do agy, não uma contagem de token; nunca somado com `aitokens_tokens_t
 O Copilot carimba a sessão inteira no `startTime` da sessão (`adapters/copilot_transcript_reader.py`),
 não por request — limitação da fonte, documentada, não corrigida: espalhar tokens
 retroativamente ao longo da sessão inventaria dados que a fonte não mede.
+
+### Dashboards versionados: Perses, não Grafana
+
+Decisão original deste MADR era vmui-only (sem dashboard-como-código) para manter o peso mínimo.
+Revisitada: vmui não tem um formato de dashboard versionável maduro (a aba "Dashboards" lê JSON
+local, sem hot-reload de arquivo, formato pouco documentado). A alternativa de mercado é Grafana,
+mas é pesada para uso pessoal local (auth, orgs, plugins que não fazem sentido aqui).
+
+**Escolhido: [Perses](https://perses.dev)** — projeto CNCF sandbox especificamente desenhado para
+dashboard-as-code: `perses/provisioning/*.yaml` no repo (datasource, project, dashboard) é lido
+automaticamente na inicialização e a cada hora (`provisioning.interval`), sem passar pela UI.
+Medido, não estimado: binário de 84MB, **~90MB de RSS em regime** (a métrica de memória do cgroup
+do systemd reporta mais — ~300MB — por contar page cache do bundle de plugins descompactado, não
+RSS real; `ps` é a fonte confiável aqui). Mais pesado que VictoriaMetrics (13MB RSS) ou o exporter
+(41MB RSS) por uma ordem de grandeza, mas ainda pequeno em termos absolutos numa máquina local
+moderna — o trade-off aceito é "leve" cedendo espaço para "dashboard como código", não os dois ao
+mesmo tempo. `install-perses.sh` é opt-in, como VictoriaMetrics: instalar o tracker base não
+traz isso.
+
+Detalhe operacional descoberto na instalação: o binário `perses` exige que `plugins-archive/` (o
+bundle de plugins de painel/datasource, ~99MB, parte do release) esteja alcançável a partir do seu
+diretório de trabalho — não há flag para apontar outro caminho. `install-perses.sh` symlinka o
+bundle para dentro de `perses/` no repo por isso; o unit systemd fixa `WorkingDirectory` lá, o que
+também é o que faz os caminhos relativos do `config.yaml` (`./data`, `./provisioning`) resolverem
+para dentro do repo em vez do `$HOME` do usuário.
 
 ## Consequências
 
