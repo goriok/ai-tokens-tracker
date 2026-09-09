@@ -9,8 +9,12 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 
+	"github.com/goriok/ai-tokens-tracker/exporter/internal/checkpoint"
+	"github.com/goriok/ai-tokens-tracker/exporter/internal/ingest"
 	"github.com/goriok/ai-tokens-tracker/exporter/internal/sqlitesource"
+	"github.com/goriok/ai-tokens-tracker/exporter/internal/tsdbstore"
 )
 
 func defaultDBPath() string {
@@ -21,19 +25,61 @@ func defaultDBPath() string {
 	return filepath.Join(home, ".local", "share", "ai-tokens-tracker", "usage.db")
 }
 
+func defaultTSDBDir() string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	return filepath.Join(home, ".local", "share", "ai-tokens-tracker", "tsdb")
+}
+
 func main() {
 	if len(os.Args) < 2 {
-		fmt.Fprintln(os.Stderr, "usage: aitokens-exporter <dump> [flags]")
+		fmt.Fprintln(os.Stderr, "usage: aitokens-exporter <dump|backfill> [flags]")
 		os.Exit(2)
 	}
 
 	switch os.Args[1] {
 	case "dump":
 		runDump(os.Args[2:])
+	case "backfill":
+		runBackfill(os.Args[2:])
 	default:
 		fmt.Fprintf(os.Stderr, "unknown subcommand %q\n", os.Args[1])
 		os.Exit(2)
 	}
+}
+
+// runBackfill is Phase 3's verification tool: one-shot, ordered append of
+// the entire history from usage.db into the local tsdbstore. See
+// ingest.Backfill and MADR-003 for why this must sort globally by
+// timestamp rather than relying on any out-of-order window.
+func runBackfill(args []string) {
+	fs := flag.NewFlagSet("backfill", flag.ExitOnError)
+	dbPath := fs.String("db", defaultDBPath(), "path to usage.db (read-only)")
+	tsdbDir := fs.String("tsdb", defaultTSDBDir(), "directory for the append-only samples log")
+	force := fs.Bool("force", false, "re-run even if a backfill already completed")
+	fs.Parse(args)
+
+	src, err := sqlitesource.Open(*dbPath)
+	must(err)
+	defer src.Close()
+
+	store, err := tsdbstore.Open(*tsdbDir)
+	must(err)
+	defer store.Close()
+
+	cp, err := checkpoint.Load(*tsdbDir)
+	must(err)
+
+	result, err := ingest.Backfill(src, store, cp, *force, time.Now().UTC().Format(time.RFC3339))
+	must(err)
+
+	must(checkpoint.Save(*tsdbDir, result.NewCheckpoint))
+
+	fmt.Printf("backfill complete: %d raw samples, %d bad rows, %d written to %s\n",
+		result.RawSamples, result.BadRows, result.Written, *tsdbDir)
+	fmt.Printf("checkpoint: %+v\n", result.NewCheckpoint)
 }
 
 // runDump is Phase 1's verification tool: proves the Go side reads the same
