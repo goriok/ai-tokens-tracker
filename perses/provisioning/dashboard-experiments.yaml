@@ -1,0 +1,192 @@
+kind: Dashboard
+metadata:
+  name: experiments
+  project: ai-tokens-tracker
+spec:
+  display:
+    name: AI Tokens — Experiments
+    description: >-
+      Comparação A/B de consumo de token entre sessões nomeadas — para os
+      experimentos rag-vs-manual (ver .claude/workflows/). Escolha as sessões
+      de cada grupo nos seletores; a nomenclatura de session_name não segue
+      um padrão fixo entre execuções, então a seleção é manual, não regex
+      automática. Ver docs/madrs/MADR-003.
+  duration: 90d
+  refreshInterval: 0s
+  variables:
+    - kind: ListVariable
+      spec:
+        name: groupA
+        display:
+          name: Grupo A (ex. rag / com skill)
+        allowAllValue: false
+        allowMultiple: true
+        sort: alphabetical-desc
+        plugin:
+          kind: PrometheusLabelValuesVariable
+          spec:
+            labelName: session_name
+    - kind: ListVariable
+      spec:
+        name: groupB
+        display:
+          name: Grupo B (ex. manual / sem skill)
+        allowAllValue: false
+        allowMultiple: true
+        sort: alphabetical-desc
+        plugin:
+          kind: PrometheusLabelValuesVariable
+          spec:
+            labelName: session_name
+  panels:
+    totalsByGroup:
+      kind: Panel
+      spec:
+        display:
+          name: Total de tokens por sessão selecionada
+          description: Uma linha por sessão — compare visualmente os grupos A e B pelo nome.
+        plugin:
+          kind: TimeSeriesTable
+          spec: {}
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: sum(aitokens_tokens_total{session_name=~"${groupA}|${groupB}"}) by (session_name)
+    tokensByTypeGroupA:
+      kind: Panel
+      spec:
+        display:
+          name: 'Grupo A — tokens por tipo'
+        plugin:
+          kind: TimeSeriesChart
+          spec: {}
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: sum(aitokens_tokens_total{session_name=~"$groupA"}) by (token_type)
+    tokensByTypeGroupB:
+      kind: Panel
+      spec:
+        display:
+          name: 'Grupo B — tokens por tipo'
+        plugin:
+          kind: TimeSeriesChart
+          spec: {}
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: sum(aitokens_tokens_total{session_name=~"$groupB"}) by (token_type)
+    totalGroupA:
+      kind: Panel
+      spec:
+        display:
+          name: Grupo A — total
+        plugin:
+          kind: StatChart
+          spec:
+            calculation: last
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: sum(aitokens_tokens_total{session_name=~"$groupA"})
+    totalGroupB:
+      kind: Panel
+      spec:
+        display:
+          name: Grupo B — total
+        plugin:
+          kind: StatChart
+          spec:
+            calculation: last
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: sum(aitokens_tokens_total{session_name=~"$groupB"})
+    modelBreakdown:
+      kind: Panel
+      spec:
+        display:
+          name: Modelo usado — grupos A e B
+        plugin:
+          kind: TimeSeriesChart
+          spec: {}
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: sum(aitokens_tokens_total{session_name=~"${groupA}|${groupB}"}) by (session_name, model)
+  layouts:
+    - kind: Grid
+      spec:
+        display:
+          title: Totais comparados
+          collapse:
+            open: true
+        items:
+          - x: 0
+            y: 0
+            width: 6
+            height: 4
+            content:
+              $ref: "#/spec/panels/totalGroupA"
+          - x: 6
+            y: 0
+            width: 6
+            height: 4
+            content:
+              $ref: "#/spec/panels/totalGroupB"
+          - x: 12
+            y: 0
+            width: 12
+            height: 8
+            content:
+              $ref: "#/spec/panels/totalsByGroup"
+    - kind: Grid
+      spec:
+        display:
+          title: Breakdown por tipo de token
+          collapse:
+            open: true
+        items:
+          - x: 0
+            y: 0
+            width: 12
+            height: 8
+            content:
+              $ref: "#/spec/panels/tokensByTypeGroupA"
+          - x: 12
+            y: 0
+            width: 12
+            height: 8
+            content:
+              $ref: "#/spec/panels/tokensByTypeGroupB"
+    - kind: Grid
+      spec:
+        display:
+          title: Modelo usado
+          collapse:
+            open: true
+        items:
+          - x: 0
+            y: 0
+            width: 24
+            height: 8
+            content:
+              $ref: "#/spec/panels/modelBreakdown"
