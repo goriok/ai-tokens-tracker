@@ -1,0 +1,4 @@
+id: sess-named
+cwd: /home/user/proj-e
+name: my-named-experiment
+user_named: true

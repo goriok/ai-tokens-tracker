@@ -1,0 +1,7 @@
+{"type":"assistant","timestamp":"2026-09-01T10:00:00.123Z","sessionId":"sess-1","cwd":"/home/user/proj-a","gitBranch":"main","requestId":"req-1","isSidechain":false,"message":{"model":"claude-sonnet-5","usage":{"input_tokens":100,"output_tokens":50,"cache_read_input_tokens":10,"cache_creation_input_tokens":5}}}
+{"type":"assistant","timestamp":"2026-09-01T10:00:01.456Z","sessionId":"sess-1","cwd":"/home/user/proj-a","gitBranch":"main","requestId":"req-1","isSidechain":false,"message":{"model":"claude-sonnet-5","usage":{"input_tokens":100,"output_tokens":50,"cache_read_input_tokens":10,"cache_creation_input_tokens":5}}}
+{"type":"custom-title","sessionId":"sess-1","customTitle":"morning-refactor"}
+{"type":"assistant","timestamp":"2026-09-01T10:05:00.789Z","sessionId":"sess-1","cwd":"/home/user/proj-a","gitBranch":"main","requestId":"req-2","isSidechain":true,"agentId":"a51318970185552cb","message":{"model":"claude-opus-5","usage":{"input_tokens":200,"output_tokens":80,"cache_read_input_tokens":0,"cache_creation_input_tokens":0}}}
+{"type":"user","timestamp":"2026-09-01T10:05:01.000Z","sessionId":"sess-1"}
+this is not valid json
+{"type":"assistant","timestamp":"2026-09-01T10:06:00.000Z","sessionId":"sess-1","cwd":"/home/user/proj-a","gitBranch":"main","requestId":"req-3","isSidechain":false,"message":{"model":"claude-sonnet-5","usage":{}}}

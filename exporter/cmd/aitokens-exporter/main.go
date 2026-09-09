@@ -1,11 +1,11 @@
-// Command aitokens-exporter reads token usage from the Python side's
-// SQLite store and, eventually, serves it as a Prometheus-queryable
-// timeseries. See docs/madrs/MADR-003 for the architecture.
+// Command aitokens-exporter reads AI CLI token usage directly from local
+// transcripts and CLI subprocess calls, and serves it as a
+// Prometheus-queryable timeseries. See docs/madrs/MADR-003 and MADR-004
+// for the architecture.
 package main
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -17,21 +17,32 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/goriok/ai-tokens-tracker/exporter/internal/adapters/agycli"
+	"github.com/goriok/ai-tokens-tracker/exporter/internal/adapters/claudecode"
+	"github.com/goriok/ai-tokens-tracker/exporter/internal/adapters/copilot"
 	"github.com/goriok/ai-tokens-tracker/exporter/internal/checkpoint"
 	"github.com/goriok/ai-tokens-tracker/exporter/internal/httpapi"
 	"github.com/goriok/ai-tokens-tracker/exporter/internal/ingest"
 	"github.com/goriok/ai-tokens-tracker/exporter/internal/metrics"
-	"github.com/goriok/ai-tokens-tracker/exporter/internal/sqlitesource"
+	"github.com/goriok/ai-tokens-tracker/exporter/internal/ports"
 	"github.com/goriok/ai-tokens-tracker/exporter/internal/tsdbstore"
 	"github.com/goriok/ai-tokens-tracker/exporter/internal/vmimport"
 )
 
-func defaultDBPath() string {
+func defaultProjectsDir() string {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return ""
 	}
-	return filepath.Join(home, ".local", "share", "ai-tokens-tracker", "usage.db")
+	return filepath.Join(home, ".claude", "projects")
+}
+
+func defaultSessionStateDir() string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	return filepath.Join(home, ".copilot", "session-state")
 }
 
 func defaultTSDBDir() string {
@@ -44,13 +55,11 @@ func defaultTSDBDir() string {
 
 func main() {
 	if len(os.Args) < 2 {
-		fmt.Fprintln(os.Stderr, "usage: aitokens-exporter <dump|backfill|serve|export-vm> [flags]")
+		fmt.Fprintln(os.Stderr, "usage: aitokens-exporter <backfill|serve|export-vm> [flags]")
 		os.Exit(2)
 	}
 
 	switch os.Args[1] {
-	case "dump":
-		runDump(os.Args[2:])
 	case "backfill":
 		runBackfill(os.Args[2:])
 	case "serve":
@@ -87,23 +96,24 @@ func runExportVM(args []string) {
 	fmt.Printf("exported %d samples to %s/api/v1/import\n", len(samples), *vmURL)
 }
 
-// runServe is Phase 4's long-running process: incremental ingestion on a
-// timer, plus an HTTP server exposing /metrics (current state) and
-// /-/healthy. Requires a completed backfill (ingest.Backfill via the
-// backfill subcommand) — refuses to start incremental ingestion into a
-// store with no BackfillCompletedAt, since Incremental's checkpoint-based
-// delta reads assume the historical data is already in place.
+// runServe is the long-running process: incremental ingestion on a timer,
+// plus an HTTP server exposing /metrics (current state) and /-/healthy.
+// Requires a completed backfill (ingest.Backfill via the backfill
+// subcommand) — refuses to start incremental ingestion into a store with
+// no BackfillCompletedAt, since Incremental's checkpoint-based delta reads
+// assume the historical data is already in place.
 func runServe(args []string) {
 	fs := flag.NewFlagSet("serve", flag.ExitOnError)
-	dbPath := fs.String("db", defaultDBPath(), "path to usage.db (read-only)")
 	tsdbDir := fs.String("tsdb", defaultTSDBDir(), "directory for the append-only samples log")
 	listen := fs.String("listen", "127.0.0.1:9464", "address to serve /metrics on")
 	interval := fs.Duration("interval", time.Minute, "how often to run an incremental ingest cycle")
+	projectsDir := fs.String("projects-dir", defaultProjectsDir(), "Claude Code transcripts directory")
+	sessionStateDir := fs.String("session-state-dir", defaultSessionStateDir(), "Copilot session-state directory")
 	fs.Parse(args)
 
-	src, err := sqlitesource.Open(*dbPath)
-	must(err)
-	defer src.Close()
+	ccReader := claudecode.NewReader(*projectsDir)
+	copilotReader := copilot.NewReader(*sessionStateDir)
+	quota := agycli.NewRunner()
 
 	store, err := tsdbstore.Open(*tsdbDir)
 	must(err)
@@ -134,7 +144,7 @@ func runServe(args []string) {
 		}
 	}()
 
-	runIngestLoop(ctx, src, store, acc, cp, *tsdbDir, *interval)
+	runIngestLoop(ctx, ccReader, copilotReader, quota, store, acc, cp, *tsdbDir, *interval)
 
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -149,12 +159,22 @@ func runServe(args []string) {
 // ingest.Incremental and checkpoint.Save's atomicity for why that order
 // matters (a crash between append and checkpoint save just means a
 // harmless reprocessed batch next cycle, never lost data).
-func runIngestLoop(ctx context.Context, src *sqlitesource.Source, store *tsdbstore.Store, acc *metrics.Accumulator, cp checkpoint.State, tsdbDir string, interval time.Duration) {
+func runIngestLoop(
+	ctx context.Context,
+	ccReader ports.ClaudeCodeTranscriptReader,
+	copilotReader ports.CopilotTranscriptReader,
+	quota ports.QuotaRunner,
+	store *tsdbstore.Store,
+	acc *metrics.Accumulator,
+	cp checkpoint.State,
+	tsdbDir string,
+	interval time.Duration,
+) {
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
 	runCycle := func() {
-		result, err := ingest.Incremental(src, store, acc, cp)
+		result, err := ingest.Incremental(ccReader, copilotReader, quota, store, acc, cp)
 		if err != nil {
 			log.Printf("ingest cycle failed: %v", err)
 			return
@@ -165,8 +185,7 @@ func runIngestLoop(ctx context.Context, src *sqlitesource.Source, store *tsdbsto
 			return
 		}
 		if result.RawSamples > 0 {
-			log.Printf("ingest cycle: %d raw samples, %d bad rows, %d written",
-				result.RawSamples, result.BadRows, result.Written)
+			log.Printf("ingest cycle: %d raw samples, %d written", result.RawSamples, result.Written)
 		}
 	}
 
@@ -182,20 +201,21 @@ func runIngestLoop(ctx context.Context, src *sqlitesource.Source, store *tsdbsto
 	}
 }
 
-// runBackfill is Phase 3's verification tool: one-shot, ordered append of
-// the entire history from usage.db into the local tsdbstore. See
-// ingest.Backfill and MADR-003 for why this must sort globally by
-// timestamp rather than relying on any out-of-order window.
+// runBackfill is a one-shot, ordered append of the entire available
+// history from local transcripts and the current agy quota into the local
+// tsdbstore. See ingest.Backfill and MADR-003 for why this must sort
+// globally by timestamp rather than relying on any out-of-order window.
 func runBackfill(args []string) {
 	fs := flag.NewFlagSet("backfill", flag.ExitOnError)
-	dbPath := fs.String("db", defaultDBPath(), "path to usage.db (read-only)")
 	tsdbDir := fs.String("tsdb", defaultTSDBDir(), "directory for the append-only samples log")
 	force := fs.Bool("force", false, "re-run even if a backfill already completed")
+	projectsDir := fs.String("projects-dir", defaultProjectsDir(), "Claude Code transcripts directory")
+	sessionStateDir := fs.String("session-state-dir", defaultSessionStateDir(), "Copilot session-state directory")
 	fs.Parse(args)
 
-	src, err := sqlitesource.Open(*dbPath)
-	must(err)
-	defer src.Close()
+	ccReader := claudecode.NewReader(*projectsDir)
+	copilotReader := copilot.NewReader(*sessionStateDir)
+	quota := agycli.NewRunner()
 
 	store, err := tsdbstore.Open(*tsdbDir)
 	must(err)
@@ -204,58 +224,12 @@ func runBackfill(args []string) {
 	cp, err := checkpoint.Load(*tsdbDir)
 	must(err)
 
-	result, err := ingest.Backfill(src, store, cp, *force, time.Now().UTC().Format(time.RFC3339))
+	result, err := ingest.Backfill(ccReader, copilotReader, quota, store, cp, *force, time.Now().UTC().Format(time.RFC3339))
 	must(err)
 
 	must(checkpoint.Save(*tsdbDir, result.NewCheckpoint))
 
-	fmt.Printf("backfill complete: %d raw samples, %d bad rows, %d written to %s\n",
-		result.RawSamples, result.BadRows, result.Written, *tsdbDir)
-	fmt.Printf("checkpoint: %+v\n", result.NewCheckpoint)
-}
-
-// runDump is Phase 1's verification tool: proves the Go side reads the same
-// rows the Python side writes, without touching the TSDB yet.
-func runDump(args []string) {
-	fs := flag.NewFlagSet("dump", flag.ExitOnError)
-	dbPath := fs.String("db", defaultDBPath(), "path to usage.db (read-only)")
-	limit := fs.Int("limit", 10, "max rows to print per table")
-	fs.Parse(args)
-
-	src, err := sqlitesource.Open(*dbPath)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "open %s: %v\n", *dbPath, err)
-		os.Exit(1)
-	}
-	defer src.Close()
-
-	ccEvents, ccMax, ccBad, err := src.ClaudeCodeEventsSince(0)
-	must(err)
-	copilotEvents, coMax, coBad, err := src.CopilotEventsSince(0)
-	must(err)
-	taskCalls, tcMax, tcBad, err := src.TaskCallsSince(0)
-	must(err)
-	snapshots, usMax, usBad, err := src.UsageSnapshotsSince(0)
-	must(err)
-
-	printTable("claude_code_usage_events", truncate(ccEvents, *limit), len(ccEvents), ccMax, ccBad)
-	printTable("copilot_usage_events", truncate(copilotEvents, *limit), len(copilotEvents), coMax, coBad)
-	printTable("task_calls", truncate(taskCalls, *limit), len(taskCalls), tcMax, tcBad)
-	printTable("usage_snapshots", truncate(snapshots, *limit), len(snapshots), usMax, usBad)
-}
-
-func truncate[T any](s []T, n int) []T {
-	if len(s) > n {
-		return s[:n]
-	}
-	return s
-}
-
-func printTable(name string, sample any, total int, maxID int64, badRows int) {
-	fmt.Printf("=== %s (total=%d, max_id=%d, bad_rows=%d) ===\n", name, total, maxID, badRows)
-	enc := json.NewEncoder(os.Stdout)
-	enc.SetIndent("", "  ")
-	_ = enc.Encode(sample)
+	fmt.Printf("backfill complete: %d raw samples, %d written to %s\n", result.RawSamples, result.Written, *tsdbDir)
 }
 
 func must(err error) {

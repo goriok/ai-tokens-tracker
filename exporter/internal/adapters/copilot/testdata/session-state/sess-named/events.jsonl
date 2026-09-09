@@ -1,0 +1,2 @@
+{"type":"session.start","data":{"sessionId":"sess-named","startTime":"2026-09-09T15:00:00.000Z","context":{"cwd":"/home/user/proj-e"}},"id":"evt-1","timestamp":"2026-09-09T15:00:00.100Z"}
+{"type":"session.shutdown","data":{"shutdownType":"routine","currentModel":"claude-sonnet-5","modelMetrics":{"claude-sonnet-5":{"usage":{"inputTokens":50,"outputTokens":10,"cacheReadTokens":0,"cacheWriteTokens":0}}}},"id":"evt-2","timestamp":"2026-09-09T15:00:30.000Z"}

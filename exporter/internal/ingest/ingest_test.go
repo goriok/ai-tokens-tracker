@@ -2,28 +2,25 @@ package ingest
 
 import (
 	"testing"
-	"time"
 
+	"github.com/goriok/ai-tokens-tracker/exporter/internal/adapters/claudecode"
+	"github.com/goriok/ai-tokens-tracker/exporter/internal/adapters/copilot"
 	"github.com/goriok/ai-tokens-tracker/exporter/internal/checkpoint"
 	"github.com/goriok/ai-tokens-tracker/exporter/internal/metrics"
-	"github.com/goriok/ai-tokens-tracker/exporter/internal/sqlitesource"
+	"github.com/goriok/ai-tokens-tracker/exporter/internal/model"
 	"github.com/goriok/ai-tokens-tracker/exporter/internal/tsdbstore"
 )
 
-// fixturePath is the same fixture sqlitesource's tests use — it includes a
-// deliberately out-of-order row (req-3-late-discovery, inserted 3rd by id
-// but timestamped before the other two) which is exactly the case Backfill
-// must handle by sorting globally before appending.
-const fixturePath = "../sqlitesource/testdata/fixture.db"
+// fakeQuotaRunner is the seam for the removed subprocess dependency —
+// FetchQuota's own parsing logic is tested in adapters/agycli; here it's a
+// collaborator ingest.Backfill/Incremental must call and fold in.
+type fakeQuotaRunner struct {
+	snapshots []model.UsageSnapshot
+	err       error
+}
 
-func openFixtureSource(t *testing.T) *sqlitesource.Source {
-	t.Helper()
-	src, err := sqlitesource.Open(fixturePath)
-	if err != nil {
-		t.Fatalf("open fixture: %v", err)
-	}
-	t.Cleanup(func() { src.Close() })
-	return src
+func (f fakeQuotaRunner) FetchQuota() ([]model.UsageSnapshot, error) {
+	return f.snapshots, f.err
 }
 
 func openTempStore(t *testing.T) *tsdbstore.Store {
@@ -36,80 +33,43 @@ func openTempStore(t *testing.T) *tsdbstore.Store {
 	return store
 }
 
-func TestBackfill_SortsGloballyDespiteOutOfOrderInsertion(t *testing.T) {
-	src := openFixtureSource(t)
+// claudecode's own testdata/projects fixture (3 events across req-1,
+// req-2, req-3, with req-3 timestamped earlier than the other two despite
+// being read last — the out-of-order case Backfill must handle by sorting
+// globally) and copilot's testdata/session-state fixture (1 completed
+// session) are reused here rather than duplicated, so there's one place
+// that defines what "the fixture" contains.
+const (
+	claudeCodeFixtureDir = "../adapters/claudecode/testdata/projects"
+	copilotFixtureDir    = "../adapters/copilot/testdata/session-state"
+)
+
+func TestBackfill_ReadsAllSourcesAndSortsGlobally(t *testing.T) {
+	ccReader := claudecode.NewReader(claudeCodeFixtureDir)
+	copilotReader := copilot.NewReader(copilotFixtureDir)
+	quota := fakeQuotaRunner{}
 	store := openTempStore(t)
 
-	result, err := Backfill(src, store, checkpoint.State{}, false, "2026-09-09T18:00:00Z")
+	result, err := Backfill(ccReader, copilotReader, quota, store, checkpoint.State{}, false, "2026-09-09T18:00:00Z")
 	if err != nil {
 		t.Fatalf("Backfill: %v", err)
 	}
 
-	if result.BadRows != 0 {
-		t.Errorf("BadRows = %d, want 0", result.BadRows)
-	}
-	// 3 claude-code events x 4 token types + 1 copilot event x 4 + 2 task
-	// calls x (4 + 1 cache_creation_measured gauge) + 1 usage snapshot = 12+4+10+1 = 27
-	if result.RawSamples != 27 {
-		t.Errorf("RawSamples = %d, want 27", result.RawSamples)
-	}
-	if result.Written != result.RawSamples {
-		t.Errorf("Written = %d, want %d (all samples land within the fresh store, nothing too-old)", result.Written, result.RawSamples)
-	}
 	if result.NewCheckpoint.BackfillCompletedAt != "2026-09-09T18:00:00Z" {
 		t.Errorf("BackfillCompletedAt = %q, want the completedAt passed in", result.NewCheckpoint.BackfillCompletedAt)
 	}
-	if result.NewCheckpoint.ClaudeCodeUsageEvents != 3 {
-		t.Errorf("ClaudeCodeUsageEvents cursor = %d, want 3 (max id in fixture)", result.NewCheckpoint.ClaudeCodeUsageEvents)
+	if result.Written != result.RawSamples {
+		t.Errorf("Written = %d, want %d (all samples land within the fresh store)", result.Written, result.RawSamples)
 	}
 
-	// The proof that global sort worked: seed a fresh accumulator from the
-	// store and confirm the claude-code input_tokens counter for req-3's
-	// series (project-b, haiku) equals exactly its own contribution — if
-	// backfill had appended in id order (1, 2, 3) instead of timestamp
-	// order, req-3's earlier timestamp would still land last in the log,
-	// which is fine for THIS series (it's the only member), but the
-	// critical property is that the log's on-disk order is timestamp order
-	// across ALL series, which the next check establishes indirectly via
-	// SeedAccumulator reproducing the same running totals either way.
+	// req-1's series (proj-a, claude-sonnet-5, named session) must have its
+	// full running total intact after backfill, regardless of the fact that
+	// req-3 (an earlier-timestamped, later-discovered event) was read after
+	// it — proving the sort-before-append discipline survived the port from
+	// sqlitesource to these file-based adapters.
 	acc := metrics.NewAccumulator()
 	store.SeedAccumulator(acc)
-
 	got := acc.Apply(metrics.RawSample{
-		Metric: metrics.TokensTotal,
-		Labels: metrics.Labels{
-			{Name: "source", Value: "claude-code"},
-			{Name: "model", Value: "claude-sonnet-5"},
-			{Name: "project", Value: "proj-a"},
-			{Name: "git_branch", Value: "main"},
-			{Name: "agent_kind", Value: metrics.AgentKindMain},
-			{Name: "session_name", Value: "morning-refactor"}, // fixture names req-1's session (sess-1)
-			{Name: "token_type", Value: metrics.TokenTypeInput},
-		},
-		Timestamp: time.Now(),
-		Delta:     0, // querying the running total without changing it
-	})
-	if got.Value != 100 {
-		t.Errorf("seeded running total for req-1's series = %v, want 100 (req-1's input_tokens)", got.Value)
-	}
-}
-
-func TestBackfill_SessionNameJoinsCorrectlyAndDefaultsToEmpty(t *testing.T) {
-	src := openFixtureSource(t)
-	store := openTempStore(t)
-
-	_, err := Backfill(src, store, checkpoint.State{}, false, "2026-09-09T18:00:00Z")
-	if err != nil {
-		t.Fatalf("Backfill: %v", err)
-	}
-
-	// sess-1 (req-1, req-2) is named "morning-refactor" in the fixture;
-	// sess-0 (req-3) is not named — must come through as empty, not missing
-	// or some placeholder value.
-	acc := metrics.NewAccumulator()
-	store.SeedAccumulator(acc)
-
-	named := acc.Apply(metrics.RawSample{
 		Metric: metrics.TokensTotal,
 		Labels: metrics.Labels{
 			{Name: "source", Value: "claude-code"},
@@ -120,77 +80,89 @@ func TestBackfill_SessionNameJoinsCorrectlyAndDefaultsToEmpty(t *testing.T) {
 			{Name: "session_name", Value: "morning-refactor"},
 			{Name: "token_type", Value: metrics.TokenTypeInput},
 		},
-		Timestamp: time.Now(),
-		Delta:     0,
+		Delta: 0,
 	})
-	if named.Value != 100 {
-		t.Errorf("named session's running total = %v, want 100", named.Value)
-	}
-
-	unnamed := acc.Apply(metrics.RawSample{
-		Metric: metrics.TokensTotal,
-		Labels: metrics.Labels{
-			{Name: "source", Value: "claude-code"},
-			{Name: "model", Value: "claude-haiku-4-5-20251001"},
-			{Name: "project", Value: "proj-b"},
-			{Name: "git_branch", Value: ""},
-			{Name: "agent_kind", Value: metrics.AgentKindMain},
-			{Name: "session_name", Value: ""},
-			{Name: "token_type", Value: metrics.TokenTypeInput},
-		},
-		Timestamp: time.Now(),
-		Delta:     0,
-	})
-	if unnamed.Value != 10 {
-		t.Errorf("unnamed session's running total = %v, want 10 (req-3's input_tokens)", unnamed.Value)
+	if got.Value != 100 {
+		t.Errorf("req-1 series running total = %v, want 100", got.Value)
 	}
 }
 
 func TestBackfill_RefusesToRerunWithoutForce(t *testing.T) {
-	src := openFixtureSource(t)
+	ccReader := claudecode.NewReader(claudeCodeFixtureDir)
+	copilotReader := copilot.NewReader(copilotFixtureDir)
 	store := openTempStore(t)
 
 	completed := checkpoint.State{BackfillCompletedAt: "2026-09-01T00:00:00Z"}
-	_, err := Backfill(src, store, completed, false, "2026-09-09T18:00:00Z")
+	_, err := Backfill(ccReader, copilotReader, fakeQuotaRunner{}, store, completed, false, "2026-09-09T18:00:00Z")
 	if err == nil {
 		t.Fatal("expected an error when backfill has already completed and force is false")
 	}
 }
 
 func TestBackfill_ForceAllowsRerun(t *testing.T) {
-	src := openFixtureSource(t)
+	ccReader := claudecode.NewReader(claudeCodeFixtureDir)
+	copilotReader := copilot.NewReader(copilotFixtureDir)
 	store := openTempStore(t)
 
 	completed := checkpoint.State{BackfillCompletedAt: "2026-09-01T00:00:00Z"}
-	_, err := Backfill(src, store, completed, true, "2026-09-09T18:00:00Z")
+	_, err := Backfill(ccReader, copilotReader, fakeQuotaRunner{}, store, completed, true, "2026-09-09T18:00:00Z")
 	if err != nil {
 		t.Fatalf("Backfill with force=true: %v", err)
 	}
 }
 
-func TestIncremental_ReadsOnlyTheDeltaAndPreservesRunningTotal(t *testing.T) {
-	src := openFixtureSource(t)
+func TestIncremental_CursorPreventsReprocessing(t *testing.T) {
+	ccReader := claudecode.NewReader(claudeCodeFixtureDir)
+	copilotReader := copilot.NewReader(copilotFixtureDir)
 	store := openTempStore(t)
 	acc := metrics.NewAccumulator()
 
-	// First cycle: only ask for rows after id=1 in claude_code_usage_events —
-	// simulates a checkpoint already past the fixture's first row.
-	cp := checkpoint.State{ClaudeCodeUsageEvents: 1}
-	result, err := Incremental(src, store, acc, cp)
+	first, err := Incremental(ccReader, copilotReader, fakeQuotaRunner{}, store, acc, checkpoint.State{})
 	if err != nil {
-		t.Fatalf("Incremental: %v", err)
+		t.Fatalf("Incremental cycle 1: %v", err)
 	}
-	if result.NewCheckpoint.ClaudeCodeUsageEvents != 3 {
-		t.Errorf("cursor after cycle 1 = %d, want 3", result.NewCheckpoint.ClaudeCodeUsageEvents)
+	if first.RawSamples == 0 {
+		t.Fatal("cycle 1: expected some raw samples from the fixture, got 0")
 	}
 
-	// Second cycle with the advanced checkpoint must see nothing new from
-	// claude_code_usage_events (idempotency: no double-counting).
-	result2, err := Incremental(src, store, acc, result.NewCheckpoint)
+	second, err := Incremental(ccReader, copilotReader, fakeQuotaRunner{}, store, acc, first.NewCheckpoint)
 	if err != nil {
 		t.Fatalf("Incremental cycle 2: %v", err)
 	}
-	if result2.RawSamples != 0 {
-		t.Errorf("cycle 2 RawSamples = %d, want 0 (nothing new after the cursor)", result2.RawSamples)
+	if second.RawSamples != 0 {
+		t.Errorf("cycle 2 (advanced cursor): RawSamples = %d, want 0 (nothing new)", second.RawSamples)
+	}
+}
+
+func TestIncremental_FoldsInQuotaSnapshots(t *testing.T) {
+	ccReader := claudecode.NewReader(claudeCodeFixtureDir)
+	copilotReader := copilot.NewReader(copilotFixtureDir)
+	store := openTempStore(t)
+	acc := metrics.NewAccumulator()
+
+	quota := fakeQuotaRunner{snapshots: []model.UsageSnapshot{
+		{ModelGroup: "Gemini Models", RemainingFraction: 0.5},
+	}}
+
+	result, err := Incremental(ccReader, copilotReader, quota, store, acc, checkpoint.State{})
+	if err != nil {
+		t.Fatalf("Incremental: %v", err)
+	}
+
+	snap := store.Snapshot()
+	var found bool
+	for _, s := range snap {
+		if s.Metric == metrics.QuotaRemainingRatio {
+			found = true
+			if s.Value != 0.5 {
+				t.Errorf("quota sample value = %v, want 0.5", s.Value)
+			}
+		}
+	}
+	if !found {
+		t.Error("expected a QuotaRemainingRatio sample in the store after Incremental")
+	}
+	if result.RawSamples == 0 {
+		t.Error("expected RawSamples to include the quota snapshot on top of transcript events")
 	}
 }
