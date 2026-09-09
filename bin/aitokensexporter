@@ -2,21 +2,11 @@
 # Runs a one-time backfill (idempotent: no-op if already completed, unless
 # --force) then serves /metrics continuously. See docs/madrs/MADR-003.
 set -e
-PROJECT_DIR="$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)"
+source "$(dirname "$(readlink -f "$0")")/_resolve.sh"
 TSDB_DIR="${AITOKENS_TSDB_DIR:-$HOME/.local/share/ai-tokens-tracker/tsdb}"
 
-# Prefer the installed binary (`make install` in exporter/); fall back to
-# `go run` for local development so this wrapper works right after a clone.
-if command -v aitokens-exporter >/dev/null 2>&1; then
-  BIN="aitokens-exporter"
-elif [ -x "$HOME/.local/bin/aitokens-exporter" ]; then
-  BIN="$HOME/.local/bin/aitokens-exporter"
-else
-  BIN="go run $PROJECT_DIR/exporter/cmd/aitokens-exporter"
-fi
-
 if [ ! -f "$TSDB_DIR/ingest_state.json" ] || ! grep -q backfill_completed_at "$TSDB_DIR/ingest_state.json" 2>/dev/null; then
-  $BIN backfill --tsdb "$TSDB_DIR"
+  $AITOKENS_EXPORTER_BIN backfill --tsdb "$TSDB_DIR"
 fi
 
-exec $BIN serve --tsdb "$TSDB_DIR" "$@"
+exec $AITOKENS_EXPORTER_BIN serve --tsdb "$TSDB_DIR" "$@"

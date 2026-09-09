@@ -1,6 +1,9 @@
 # MADR-002: Portas UsageStore e AgyRunner (hexagonal)
 
-**Status:** approved
+**Status:** superseded — ver [MADR-004](MADR-004-remove-python-sqlite-only-go.md). O código Python
+descrito aqui (`core/`, `adapters/`, `scripts/`) foi removido; o mesmo princípio hexagonal
+(ports & adapters) sobrevive no lado Go (`exporter/internal/ports`,
+`exporter/internal/adapters/*`). Mantido como registro histórico da decisão original.
 
 ## Contexto
 

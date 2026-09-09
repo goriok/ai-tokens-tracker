@@ -1,7 +1,8 @@
-// Package metrics maps the domain events read by sqlitesource into
-// Prometheus series: label sets, and monotonic counter values via an
-// in-memory accumulator. See docs/madrs/MADR-003 for the label cardinality
-// rationale — this package is the enforcement point for it.
+// Package metrics maps the domain events read by internal/adapters/*'s
+// transcript/CLI readers into Prometheus series: label sets, and monotonic
+// counter values via an in-memory accumulator. See docs/madrs/MADR-003 for
+// the label cardinality rationale — this package is the enforcement point
+// for it.
 package metrics
 
 import (

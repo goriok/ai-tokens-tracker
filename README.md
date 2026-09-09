@@ -5,82 +5,79 @@
 
 Rastreia o consumo de tokens/quota de agentes de IA — leve, sem custo de token para coletar.
 
-Cobre hoje o Google Antigravity CLI (`agy`, incluindo uso via TUI, não só chamadas `-p`) e o
-Claude Code (via transcripts locais). Outros agentes (hermes, opencode) estão planejados — ver
-"Limitações conhecidas" e a arquitetura hexagonal abaixo, pensada para receber um novo adapter por
-agente sem reescrever o resto do pipeline. `core/model.UsageEvent` normaliza qualquer fonte com
-tokens por request numa forma comum, então views/relatórios não precisam saber qual ferramenta
-gerou o dado.
-
-Ver `docs/madrs/` para o racional completo (por que `/usage` polling e não outras fontes
-consideradas — protobuf interno, LiteLLM, screen-scraping — todas rejeitadas).
-
-![Dashboard de uso de tokens, com timeline, comparação por janela de tempo e breakdown por modelo/fonte](docs/images/dashboard-screenshot.png)
+Cobre hoje o Google Antigravity CLI (`agy`, incluindo uso via TUI, não só chamadas `-p`), o
+Claude Code (via transcripts locais) e o Copilot CLI (via session-state local). Um único binário
+Go (`aitokens-exporter`) lê essas fontes direto, mantém um modelo de séries temporais local e
+expõe `/metrics` no formato Prometheus. Ver `docs/madrs/` para o racional completo das decisões
+(por que `/usage` polling, por que timeseries em vez de SQLite, por que Go em vez de Python).
 
 ## Como funciona
 
-- `scripts/agy-snapshot.py` — roda `agy -p "/usage" --output-format json` (custo **zero** de
-  token, é um comando meta) e grava a quota semanal restante por grupo de modelo no SQLite.
-  Pensado para rodar em cron/timer, ex. de hora em hora.
-- `scripts/agy-track.py` — wrapper opcional de `agy -p` para tarefas específicas: registra
-  tokens exatos daquela chamada, com um label.
-- `scripts/claude-code-snapshot.py` — lê `~/.claude/projects/**/*.jsonl` recursivamente (transcripts
-  locais já escritos pelo Claude Code, custo **zero** de token) e grava tokens exatos por request
-  no SQLite. Incremental via cursor de byte offset — seguro rodar com frequência (ex. a cada
-  5min). Inclui subagentes (`subagents/**/*.jsonl`, inclusive os do Workflow tool) — esses eventos
-  compartilham o `session_id` da conversa que os lançou (não têm sessão própria), mas carregam um
-  `agent_id` distinto (`isSidechain: true` no transcript), então dá pra separá-los por agente
-  mesmo agrupados na mesma sessão. Essa cobertura foi adicionada em 2026-09-04 — históricos
-  coletados antes dessa data estavam subcontados (não incluíam subagentes).
-- `scripts/agy-report.py` — gera um HTML standalone (Chart.js via CDN, sem servidor) com os
-  dados coletados.
-- `scripts/token_dashboard_server.py` — servidor local (FastAPI) para comparar consumo de tokens
-  entre janelas de tempo/sessões à mão livre, com precisão de segundo (ex: sessão de manhã com
-  `/goriok-skills:recall-search` vs. sessão à tarde sem, no mesmo dia). Relê o SQLite a cada
-  request: a página se atualiza sozinha a cada 30s via `/api/usage`, sem precisar regenerar
-  arquivo. Unifica qualquer fonte com tokens por request (`core/usage.collect_usage_events`),
-  hoje Claude Code e chamadas rastreadas do agy. Suporta parâmetros de URL (`?prefix=`,
-  `?sessions=`, `?tool=`, `?from=`/`?to=`, `?since=`/`?until=`) para pré-carregar uma comparação
-  específica sem precisar montá-la na UI a cada vez. Única peça do projeto com dependências
-  externas (fastapi/uvicorn) — roda via `uv run`, não `python3` puro.
-- `scripts/agy-widget-gtk.py` — widget GTK3 always-on-top (Linux desktop), mostra quota atual
-  e chamadas rastreadas do dia.
-- `scripts/agy-delegate.py` — roda uma tarefa via `agy -p`, escolhendo o modelo automaticamente
-  por complexidade (`--complexity low|medium|high`) + quota semanal restante (ver
-  `core/model_policy.py`), registrando o resultado como uma chamada rastreada.
+- `exporter/internal/adapters/claudecode` — lê `~/.claude/projects/**/*.jsonl` recursivamente
+  (transcripts locais já escritos pelo Claude Code, custo **zero** de token). Incremental via
+  cursor de byte offset por arquivo. Inclui subagentes (`subagents/**/*.jsonl`) — compartilham o
+  `session_id` da conversa que os lançou, mas carregam um `agent_id` distinto
+  (`isSidechain: true` no transcript).
+- `exporter/internal/adapters/copilot` — lê `~/.copilot/session-state/**/events.jsonl` (custo
+  **zero**), um evento por sessão completada (`session.shutdown`). Lê também `workspace.yaml`
+  para o título da sessão.
+- `exporter/internal/adapters/agycli` — roda `agy -p "/usage" --output-format json` (custo
+  **zero**, é um comando meta) para a quota semanal restante por grupo de modelo. `RunAgyTask`
+  roda uma tarefa real via `agy -p` (custo real) para chamadas rastreadas.
+- `exporter/internal/adapters/tracker` — roda uma tarefa real via `copilot -p` (custo real) para
+  chamadas rastreadas do Copilot.
+- `exporter/internal/modelpolicy` — escolhe modelo automaticamente por complexidade + quota
+  semanal restante, usado por `delegate`.
 
-Dados em `~/.local/share/ai-tokens-tracker/usage.db` (SQLite; sobrescrevível via `$AGY_TOOL_DB`).
+Dados em `~/.local/share/ai-tokens-tracker/tsdb/` (log append-only próprio, não SQLite — ver
+`docs/madrs/MADR-003`).
 
 ## Testes
 
 ```bash
-uv run --group dev pytest
+cd exporter && go test ./...
 ```
 
 ## Arquitetura
 
-Hexagonal (ports & adapters — racional original em `docs/madrs/MADR-002`, hoje com um port a mais):
+Hexagonal (ports & adapters — ver `docs/madrs/MADR-002` para o racional original, hoje
+implementado em Go, e `docs/madrs/MADR-004` para a migração):
 
 ```
-core/interfaces.py                    # portas: UsageStore, AgyRunner, ClaudeCodeTranscriptReader
-core/usage.py                         # collect_usage_events — normaliza qualquer fonte pra UsageEvent
-adapters/sqlite_usage_store.py        # único adapter de UsageStore hoje
-adapters/agy_cli_runner.py            # único adapter de AgyRunner hoje
-adapters/claude_code_transcript_reader.py   # único adapter de ClaudeCodeTranscriptReader hoje
-scripts/                              # aplicação — usa só as portas, nunca sqlite3/subprocess direto
+exporter/internal/ports/                    # portas: ClaudeCodeTranscriptReader, CopilotTranscriptReader, QuotaRunner
+exporter/internal/model/                    # domínio: ClaudeCodeEvent, CopilotEvent, TaskCall, UsageSnapshot
+exporter/internal/adapters/claudecode/      # único adapter de ClaudeCodeTranscriptReader hoje
+exporter/internal/adapters/copilot/         # único adapter de CopilotTranscriptReader hoje
+exporter/internal/adapters/agycli/          # único adapter de QuotaRunner hoje; também RunAgyTask
+exporter/internal/adapters/tracker/         # RunCopilotTask (chamada rastreada real)
+exporter/internal/ingest/                   # Backfill/Incremental — orquestra os readers -> metrics -> tsdbstore
+exporter/internal/metrics/                  # mapeia eventos de domínio em séries Prometheus
+exporter/internal/tsdbstore/                # storage próprio (append-only), única fonte de verdade histórica
+exporter/internal/httpapi/                  # /metrics, /-/healthy
+exporter/cmd/aitokens-exporter/             # CLI: backfill, serve, track, delegate, export-vm
 ```
 
 Um agente novo (hermes, opencode) vira um adapter novo (porta existente ou nova, conforme o tipo
-de dado que ele expõe) — sem reescrever `scripts/` nem `core/usage.py`.
+de dado que ele expõe) — sem reescrever `ingest/` nem `metrics/`.
 
 ## Instalação
 
-### Standalone
+### Coleta contínua + dashboards (recomendado)
 
 ```bash
-bash install.sh   # symlinks bin/agystatus, bin/agysnapshot, bin/agywidget, bin/agydelegate,
-                   # bin/claudecodesnapshot, bin/tokendashboard em ~/.local/bin/
-uv sync            # instala as dependências (necessário só para tokendashboard)
+bash systemd/install-exporter.sh          # backfilla o histórico e sobe /metrics em :9464
+bash systemd/install-victoriametrics.sh   # opcional: PromQL + vmui local em :8428, sem Docker
+                                           # (já importa o histórico automaticamente ao instalar)
+bash systemd/install-perses.sh            # opcional: dashboard versionado (perses/provisioning/)
+                                           # em :8080, requer o VictoriaMetrics acima
+```
+
+Ver `systemd/README.md` para detalhes de cada unit.
+
+### Comandos manuais (chamadas rastreadas)
+
+```bash
+bash install.sh   # symlinks bin/agydelegate, bin/agytrack, bin/copilottrack em ~/.local/bin/
 ```
 
 ### Como plugin do Claude Code
@@ -90,7 +87,7 @@ uv sync            # instala as dependências (necessário só para tokendashboa
 /plugin install ai-tokens-tracker
 ```
 
-Registra a skill `agy-tracking` e os comandos `/agy-status`, `/agy-widget`.
+Registra a skill `agy-tracking`.
 
 **Atualizar:** `/plugin marketplace update goriok/ai-tokens-tracker`, seguido de `/reload-plugins`
 para o Claude Code recarregar o conteúdo novo — sem o reload, o autocomplete de slash command
@@ -117,36 +114,15 @@ instalar.
 ## Uso
 
 ```bash
-agysnapshot     # registra um snapshot de quota agora (custo zero)
-claudecodesnapshot  # registra novos eventos do Claude Code agora (custo zero)
-agystatus       # gera e abre o relatório HTML
-tokendashboard  # sobe o comparativo como servidor local, se atualiza sozinho
-agywidget       # widget GTK always-on-top (Linux)
 agydelegate --complexity low --task "revisão de PR" "revise este diff..."
-
-python3 scripts/agy-track.py --model gemini-3.7-flash-low --task "revisão de PR" "revise este diff..."
+agytrack --model gemini-3.7-flash-low --task "revisão de PR" "revise este diff..."
+copilottrack --model auto --task "revisão de PR" "revise este diff..."
 ```
 
-Para coleta automática (sem precisar rodar os comandos à mão), instalar os units systemd —
-ver `systemd/README.md`.
+Cada comando cai em `go run` automaticamente se o binário não estiver instalado ainda —
+`cd exporter && make install` evita esse overhead a cada chamada.
 
-## Modelo de séries temporais (opcional, aditivo)
-
-Além do SQLite/CLI/dashboard acima, o `exporter/` (Go) lê o mesmo `usage.db` e expõe os mesmos
-dados como métricas Prometheus — útil para perguntas agregadas ao longo do tempo ("tokens por
-dia/modelo nas últimas 4 semanas") via PromQL, que o dashboard atual não responde bem. Não
-substitui nada: o SQLite continua sendo a fonte de verdade dos dados e o dashboard/CLI/widget
-continuam funcionando sem depender do exporter. Ver `docs/madrs/MADR-003` para o racional
-completo (por que TSDB próprio em vez de `prometheus/tsdb`, o modelo de labels, e por que a
-análise por sessão que o dashboard faz hoje ainda não tem equivalente neste modelo).
-
-```bash
-bash systemd/install-exporter.sh          # backfilla o histórico e sobe /metrics em :9464
-bash systemd/install-victoriametrics.sh   # opcional: PromQL + vmui local em :8428, sem Docker
-                                           # (já importa o histórico automaticamente ao instalar)
-bash systemd/install-perses.sh            # opcional: dashboard versionado (perses/provisioning/)
-                                           # em :8080, requer o VictoriaMetrics acima
-```
+## Modelo de séries temporais
 
 ```bash
 curl http://127.0.0.1:9464/metrics                                              # estado corrente, formato Prometheus
@@ -172,16 +148,18 @@ cd exporter && go run ./cmd/aitokens-exporter export-vm
 
 ## Limitações conhecidas
 
-- Cobre `agy` e Claude Code hoje — alguns nomes de comando (`agystatus`, `agysnapshot`,
-  `agywidget`, `agydelegate`) ainda carregam o prefixo `agy` por serem os mais antigos, mas o
-  schema de dados (`UsageEvent`) já é agnóstico de ferramenta. Suporte a hermes/opencode é
-  planejado, sem data definida.
-- `/usage` dá consumo agregado por grupo de modelo e janela semanal, não por tarefa individual.
-  "Quantos tokens uma tarefa específica gastou" só é respondível para chamadas feitas via
-  `agy-track.py`/`agy-delegate.py`, não para uso via TUI — investigado em 2026-09: `agy` não
+- Cobre `agy`, Claude Code e Copilot hoje — outros agentes (hermes, opencode) são planejados,
+  sem data definida.
+- `/usage` do agy dá consumo agregado por grupo de modelo e janela semanal, não por tarefa
+  individual. "Quantos tokens uma tarefa específica gastou" só é respondível para chamadas
+  feitas via `agytrack`/`agydelegate`, não para uso via TUI — investigado em 2026-09: `agy` não
   grava tokens por sessão em nenhum arquivo local (`~/.gemini/antigravity-cli/history.jsonl` só
   tem o prompt digitado; `brain/<id>/.system_generated/logs/transcript*.jsonl` registra passos
   (thinking/tool_calls) sem contagem de tokens; `log/*.log` só tem log de execução de CLI) —
   diferente do Claude Code, cujo transcript `.jsonl` sempre inclui `usage` por request.
 - Se o `agy` mudar o schema de saída de `/usage`, a coleta falha alto (não grava dado
-  inconsistente silenciosamente) — ver `AgyCliRunner.fetch_usage`.
+  inconsistente silenciosamente) — ver `agycli.Runner.FetchQuota`.
+- **Sem análise ad-hoc por sessão/janela de tempo arbitrária** — o dashboard HTML que oferecia
+  isso foi removido junto com o SQLite (ver `docs/madrs/MADR-004`). `session_name` (sessões
+  nomeadas via `claude -n <nome>`) cobre comparação A/B nomeada no dashboard `experiments`, mas
+  não substitui a comparação livre por timestamp que existia antes.

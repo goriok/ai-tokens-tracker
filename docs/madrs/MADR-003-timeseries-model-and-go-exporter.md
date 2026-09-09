@@ -151,9 +151,10 @@ fontes.
 restante do agy, não uma contagem de token; nunca somado com `aitokens_tokens_total`. `model_group`
 é slugificado (`"Gemini Models"` → `gemini_models`) para ficar ergonômico em PromQL.
 
-O Copilot carimba a sessão inteira no `startTime` da sessão (`adapters/copilot_transcript_reader.py`),
-não por request — limitação da fonte, documentada, não corrigida: espalhar tokens
-retroativamente ao longo da sessão inventaria dados que a fonte não mede.
+O Copilot carimba a sessão inteira no `startTime` da sessão (`exporter/internal/adapters/copilot`,
+originalmente `adapters/copilot_transcript_reader.py` em Python — ver MADR-004), não por request —
+limitação da fonte, documentada, não corrigida: espalhar tokens retroativamente ao longo da
+sessão inventaria dados que a fonte não mede.
 
 ### Dashboards versionados: Perses, não Grafana
 

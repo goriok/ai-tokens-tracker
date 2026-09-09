@@ -3,24 +3,22 @@ set -e
 BASE="$(cd "$(dirname "$0")" && pwd)"
 
 echo "=== ai-tokens-tracker installer (standalone) ==="
-echo "For Claude Code or Antigravity plugin install, see README.md instead."
+echo "For continuous collection + dashboards, see systemd/README.md instead —"
+echo "this only links the manual tracked-call commands."
 echo ""
 
 mkdir -p ~/.local/bin
 chmod +x "$BASE/bin/"*
-ln -sf "$BASE/bin/agystatus" ~/.local/bin/agystatus
-ln -sf "$BASE/bin/agysnapshot" ~/.local/bin/agysnapshot
-ln -sf "$BASE/bin/agywidget" ~/.local/bin/agywidget
 ln -sf "$BASE/bin/agydelegate" ~/.local/bin/agydelegate
-ln -sf "$BASE/bin/claudecodesnapshot" ~/.local/bin/claudecodesnapshot
-ln -sf "$BASE/bin/copilotsnapshot" ~/.local/bin/copilotsnapshot
-ln -sf "$BASE/bin/tokendashboard" ~/.local/bin/tokendashboard
-echo "✅ Commands linked in ~/.local/bin: agystatus, agysnapshot, agywidget, agydelegate, claudecodesnapshot, copilotsnapshot, tokendashboard"
-echo "   (tokendashboard needs 'uv sync' run once in $BASE — it depends on fastapi/uvicorn)"
+ln -sf "$BASE/bin/agytrack" ~/.local/bin/agytrack
+ln -sf "$BASE/bin/copilottrack" ~/.local/bin/copilottrack
+echo "✅ Commands linked in ~/.local/bin: agydelegate, agytrack, copilottrack"
+echo "   (each falls back to 'go run' if exporter/bin/aitokens-exporter isn't installed yet —"
+echo "   run 'make install' in exporter/ once to avoid that overhead on every call)"
 
 echo ""
 echo "=== Next steps ==="
-echo "1. Run 'agysnapshot' once to record your first quota snapshot"
-echo "2. Run 'agystatus' to generate and open the report"
-echo "3. To collect automatically, schedule 'agysnapshot' via cron/systemd timer"
-echo "   (e.g. hourly — the quota is weekly, high frequency doesn't add much)"
+echo "For continuous background collection + /metrics + dashboards:"
+echo "  bash systemd/install-exporter.sh"
+echo "  bash systemd/install-victoriametrics.sh   # optional: PromQL + vmui"
+echo "  bash systemd/install-perses.sh            # optional: versioned dashboards"

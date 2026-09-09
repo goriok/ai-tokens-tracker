@@ -5,40 +5,46 @@ description: "Track and display agy (Google Antigravity CLI) token/quota usage. 
 
 # agy Token Tracking
 
-Data lives in a local SQLite database (`~/.local/share/ai-tokens-tracker/usage.db` by default, or
-`$AGY_TOOL_DB` if set) — never JSONL, never the agy binary's own internal SQLite (that one is
-undocumented protobuf and not touched by this tool). See `docs/madrs/` in this repo for why.
+Data lives in a local append-only store (`~/.local/share/ai-tokens-tracker/tsdb/`, not SQLite —
+never the agy binary's own internal SQLite either, that one is undocumented protobuf and not
+touched by this tool). See `docs/madrs/` in this repo for why (MADR-003, MADR-004).
 
-Three kinds of data:
-- **Weekly quota snapshots** (`usage_snapshots` table) — zero-cost `/usage` polls, one row per
-  model group per poll. Covers all agy account usage, TUI included.
-- **Task calls** (`task_calls` table) — real token counts from individual `-p` calls made via
-  `scripts/agy-track.py`. Covers only calls made through that wrapper, not TUI usage.
-- **Claude Code events** (`claude_code_usage_events` table) — real token counts per request,
-  read from local transcripts (`~/.claude/projects/**/*.jsonl`, recursive — includes
-  `subagents/**/*.jsonl`). Zero-cost, covers interactive/non-interactive sessions and subagents
-  (Task/Agent tool, Workflow tool). Subagent events share their parent session's `session_id`
-  (no session of their own) but carry a distinct `agent_id` for `isSidechain: true` records —
-  use `agent_id` to separate them when grouping by session isn't enough.
+Three kinds of data, read directly from local sources by `exporter/internal/adapters/*` (no
+Python, no intermediate database — see `docs/madrs/MADR-004`):
+- **Weekly quota snapshots** — zero-cost `/usage` polls, one sample per model group per poll.
+  Covers all agy account usage, TUI included.
+- **Task calls** — real token counts from individual `-p` calls made via `agytrack`/`copilottrack`.
+  Covers only calls made through those wrappers, not TUI usage.
+- **Claude Code / Copilot events** — real token counts per request/session, read from local
+  transcripts (`~/.claude/projects/**/*.jsonl`, `~/.copilot/session-state/**/events.jsonl`).
+  Zero-cost, covers interactive/non-interactive sessions and subagents (Task/Agent tool,
+  Workflow tool). Subagent events share their parent session's `session_id` (no session of their
+  own) but carry a distinct `agent_id` for `isSidechain: true` records.
 
-`core/usage.collect_usage_events` normalizes Claude Code events and agy task calls into one
-tool-agnostic `UsageEvent` shape — reports/dashboards read that, not the raw per-tool tables.
+Exposed as Prometheus metrics (`aitokens_tokens_total` with a `token_type` label, plus
+`aitokens_quota_remaining_ratio`) — see `exporter/internal/metrics` for the mapping, and
+`docs/madrs/MADR-003` for the label cardinality rationale.
 
 ## Commands
 
-- `bash bin/agystatus` — generate and open an HTML report (charts + recent calls table)
-- `bash bin/agysnapshot` — record one quota snapshot now (normally run on a timer)
-- `bash bin/claudecodesnapshot` — record new Claude Code events now (normally run on a timer)
-- `bash bin/tokendashboard` — live local server comparing token usage across freely-picked time
-  ranges/sessions, second-level precision, compared in raw UTC (e.g. a morning session with a
-  RAG skill on vs. an afternoon session without, same day); auto-refreshes, needs `uv sync` once
-  — the only command here with external dependencies. Supports URL query params (`?prefix=`,
-  `?ranges=`, `?global=`, `?from=`, `?to=`) to pre-load a specific comparison.
-- `bash bin/agywidget` — launch the GTK always-on-top widget (Linux desktop only)
-- `python3 scripts/agy-track.py --model <model> --task "<label>" "<prompt>"` — run a tracked task call
+- `curl http://127.0.0.1:9464/metrics` — current-state metrics, Prometheus text format (requires
+  `ai-tokens-exporter.service` running — see `systemd/README.md`)
+- `xdg-open http://127.0.0.1:8428/vmui/` — PromQL ad-hoc queries (requires VictoriaMetrics)
+- `xdg-open http://127.0.0.1:8080/projects/ai-tokens-tracker/dashboards/ai-tokens` — versioned
+  dashboard (requires Perses)
+- `bash bin/agytrack --model <model> --task "<label>" "<prompt>"` — run a tracked agy task call
+- `bash bin/copilottrack --model <model> --task "<label>" "<prompt>"` — run a tracked Copilot
+  task call
 - `bash bin/agydelegate --complexity <low|medium|high> --task "<label>" "<prompt>"` — delegate a
-  task to agy, auto-picking the model by complexity + remaining quota (see the `agy-delegate`
-  skill in `goriok/my-skills` for when to use this)
+  task to agy, auto-picking the model by complexity + remaining quota
+
+Each of the three `bin/*` commands falls back to `go run` if `exporter/bin/aitokens-exporter`
+isn't installed yet — `cd exporter && make install` avoids that overhead on every call.
 
 For continuous, hands-off collection (no need to run the commands above manually), install the
-systemd user units in `systemd/` — see `systemd/README.md`.
+systemd user units — see `systemd/README.md`.
+
+**No more ad-hoc comparison by arbitrary time window/session** — the HTML dashboard that offered
+this was removed along with SQLite (MADR-004). `session_name` (named sessions via `claude -n
+<name>`) covers named A/B comparison in the `experiments` dashboard, but not free comparison by
+timestamp.

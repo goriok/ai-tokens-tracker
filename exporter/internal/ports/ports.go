@@ -19,9 +19,8 @@ import (
 // transcript file). Returns the events found, any newly-seen session
 // titles, and the cursor state updated to reflect what was read — callers
 // persist that returned state (via checkpoint.Save), not any state the
-// reader keeps internally. Mirrors sqlitesource.Source's
-// afterID-in/maxID-out shape, adapted for a per-file cursor instead of a
-// single row id.
+// reader keeps internally: an in-in/out-out shape, so the caller always
+// owns the cursor's source of truth.
 type ClaudeCodeTranscriptReader interface {
 	ReadNewEvents(cursors map[string]int64) (events []model.ClaudeCodeEvent, titles []model.SessionTitle, newCursors map[string]int64, err error)
 }

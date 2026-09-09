@@ -1,6 +1,6 @@
 {
   "name": "ai-tokens-tracker",
-  "description": "Track AI agent token/quota usage — starts with the Google Antigravity CLI (agy), zero-cost /usage polling, SQLite storage, HTML report with charts, and auto-model-picking delegation. Other agents planned.",
+  "description": "Track AI agent token/quota usage — Google Antigravity CLI (agy), Claude Code, and Copilot CLI, zero-cost local collection, Prometheus metrics + versioned dashboards, and auto-model-picking delegation. Other agents planned.",
   "version": "0.3.0",
   "author": {
     "name": "Igor Soares Alves",

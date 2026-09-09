@@ -1,17 +1,5 @@
-__pycache__/
-*.pyc
-*.db
-*.db-wal
-*.db-shm
-!exporter/**/testdata/*.db
-.venv/
-.pytest_cache/
-.coverage
-coverage.xml
-htmlcov/
 exporter/bin/
 exporter/coverage.out
 perses/data/
 perses/plugins/
 perses/plugins-archive
-

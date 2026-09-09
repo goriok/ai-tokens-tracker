@@ -3,7 +3,7 @@ set -e
 BASE="$(cd "$(dirname "$0")" && pwd)"
 UNIT_DIR="$HOME/.config/systemd/user"
 
-echo "=== ai-tokens-tracker Go exporter installer (opt-in, separate from install.sh) ==="
+echo "=== ai-tokens-tracker Go exporter installer (opt-in, separate from ../install.sh's manual commands) ==="
 echo ""
 
 if ! command -v go >/dev/null 2>&1; then
