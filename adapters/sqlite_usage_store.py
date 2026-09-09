@@ -106,7 +106,14 @@ class SqliteUsageStore:
         self._conn.execute("PRAGMA busy_timeout=5000")
         self._conn.executescript(SCHEMA)
         self._migrate()
-        os.chmod(self._path, 0o600)  # idempotent — also tightens pre-existing files
+        # WAL mode means data can live in -wal/-shm sidecar files (created with
+        # the process umask, typically world-readable) before a checkpoint moves
+        # it into usage.db — chmod all three, not just the main file, or an
+        # uncommitted write sits world-readable next to a 0600 empty-looking db.
+        for suffix in ("", "-wal", "-shm"):
+            sidecar = self._path.with_name(self._path.name + suffix)
+            if sidecar.exists():
+                os.chmod(sidecar, 0o600)
 
     def _migrate(self) -> None:
         # ALTER TABLE ADD COLUMN has no IF NOT EXISTS — added after claude_code_usage_events
