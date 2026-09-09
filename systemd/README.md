@@ -40,3 +40,20 @@ Para, desabilita e remove os symlinks — os arquivos originais continuam no rep
 
 `systemctl --user` não precisa de root — opera inteiramente no `$HOME` do usuário (unit files em
 `~/.config/systemd/user/`, sessão de D-Bus do próprio usuário).
+
+## Exporter de séries temporais (opcional, separado)
+
+Scripts à parte, opt-in — instalar `install.sh` acima não instala nada disto:
+
+```bash
+bash systemd/install-exporter.sh          # exporter Go: backfill + /metrics em :9464
+bash systemd/install-victoriametrics.sh   # opcional: VictoriaMetrics local, scrapeia o exporter, :8428
+```
+
+`ai-tokens-exporter.service` roda `bin/aitokensexporter` (backfilla uma vez, se ainda não feito;
+depois serve `/metrics` continuamente). `ai-tokens-victoriametrics.service` depende dele
+(`Wants=`/`After=`) mas sobe mesmo se o exporter ainda não subiu — só o scrape falha até lá.
+
+Desinstalar cada um com `uninstall-exporter.sh`/`uninstall-victoriametrics.sh` — os dados
+coletados (`~/.local/share/ai-tokens-tracker/tsdb/`, `.../vm-data/`) não são apagados, só os
+units. Ver `docs/madrs/MADR-003` para o racional.

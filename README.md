@@ -130,6 +130,27 @@ python3 scripts/agy-track.py --model gemini-3.7-flash-low --task "revisão de PR
 Para coleta automática (sem precisar rodar os comandos à mão), instalar os units systemd —
 ver `systemd/README.md`.
 
+## Modelo de séries temporais (opcional, aditivo)
+
+Além do SQLite/CLI/dashboard acima, o `exporter/` (Go) lê o mesmo `usage.db` e expõe os mesmos
+dados como métricas Prometheus — útil para perguntas agregadas ao longo do tempo ("tokens por
+dia/modelo nas últimas 4 semanas") via PromQL, que o dashboard atual não responde bem. Não
+substitui nada: o SQLite continua sendo a fonte de verdade dos dados e o dashboard/CLI/widget
+continuam funcionando sem depender do exporter. Ver `docs/madrs/MADR-003` para o racional
+completo (por que TSDB próprio em vez de `prometheus/tsdb`, o modelo de labels, e por que a
+análise por sessão que o dashboard faz hoje ainda não tem equivalente neste modelo).
+
+```bash
+bash systemd/install-exporter.sh          # backfilla o histórico e sobe /metrics em :9464
+bash systemd/install-victoriametrics.sh   # opcional: PromQL + vmui local em :8428, sem Docker
+```
+
+```bash
+curl http://127.0.0.1:9464/metrics                                    # estado corrente, formato Prometheus
+xdg-open http://127.0.0.1:8428/vmui/                                  # explorar via PromQL
+# exemplo de query no vmui: sum(increase(aitokens_tokens_total[7d])) by (source)
+```
+
 ## Limitações conhecidas
 
 - Cobre `agy` e Claude Code hoje — alguns nomes de comando (`agystatus`, `agysnapshot`,
