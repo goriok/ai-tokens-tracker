@@ -143,12 +143,22 @@ análise por sessão que o dashboard faz hoje ainda não tem equivalente neste m
 ```bash
 bash systemd/install-exporter.sh          # backfilla o histórico e sobe /metrics em :9464
 bash systemd/install-victoriametrics.sh   # opcional: PromQL + vmui local em :8428, sem Docker
+                                           # (já importa o histórico automaticamente ao instalar)
 ```
 
 ```bash
 curl http://127.0.0.1:9464/metrics                                    # estado corrente, formato Prometheus
 xdg-open http://127.0.0.1:8428/vmui/                                  # explorar via PromQL
 # exemplo de query no vmui: sum(increase(aitokens_tokens_total[7d])) by (source)
+```
+
+**Importante sobre histórico:** o VictoriaMetrics só "vê" o instante do scrape (`/metrics` não
+carrega timestamp — ver MADR-003). Para o vmui mostrar a evolução real ao longo das semanas, é
+preciso importar explicitamente com os timestamps originais — `install-victoriametrics.sh` já
+faz isso na instalação; rodar de novo manualmente após um backfill maior:
+
+```bash
+cd exporter && go run ./cmd/aitokens-exporter export-vm
 ```
 
 ## Limitações conhecidas

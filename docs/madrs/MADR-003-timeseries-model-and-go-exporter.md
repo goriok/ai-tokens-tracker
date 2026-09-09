@@ -44,6 +44,16 @@ globalmente por timestamp antes do append (ver seção seguinte). O VictoriaMetr
 instalado, só enxerga dados a partir do momento em que começa a scrapear; ele não é uma segunda
 fonte de verdade, é um espelho consultável em quase-tempo-real.
 
+**Corolário que ficou faltando na primeira entrega deste MADR**: se o VictoriaMetrics só vê o
+scrape, o vmui nunca mostraria a evolução histórica real (semanas de dados já backfilled) — só
+uma linha reta a partir do momento da instalação. Resolvido com `exporter/internal/vmimport`: um
+subcomando (`aitokens-exporter export-vm`) que lê o storage próprio inteiro
+(`tsdbstore.Store.AllSamples`) e faz POST para o endpoint `/api/v1/import` do VictoriaMetrics —
+que, ao contrário do scrape, aceita timestamp explícito por amostra. `install-victoriametrics.sh`
+roda isso automaticamente após a instalação; reexecutável a qualquer momento (idempotente:
+reimportar a mesma amostra é no-op no VM). Esse comando não faz parte do storage próprio nem do
+loop de ingestão — é estritamente um adaptador de saída para essa peça de visualização opcional.
+
 ### TSDB próprio, não `github.com/prometheus/prometheus/tsdb` — decisão revertida com medição
 
 O plano original usava a biblioteca oficial do TSDB do Prometheus embutida no processo Go. Foi

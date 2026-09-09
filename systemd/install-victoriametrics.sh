@@ -45,6 +45,19 @@ echo ""
 echo "This scrapes the exporter's /metrics (http://127.0.0.1:9464) — make sure"
 echo "ai-tokens-exporter.service is installed and running first (see install-exporter.sh)."
 echo ""
+echo "A scrape only ever sees the CURRENT state, not history — importing the"
+echo "real historical timestamps so vmui shows actual history, not just data"
+echo "from install time onward..."
+sleep 5  # give VM a moment to come up before the import POST
+if (cd "$BASE/../exporter" && go run ./cmd/aitokens-exporter export-vm --vm-url http://127.0.0.1:8428); then
+  echo "   ...done."
+else
+  echo "   ...import failed (VM may still be starting) — retry manually with:"
+  echo "   cd exporter && go run ./cmd/aitokens-exporter export-vm --vm-url http://127.0.0.1:8428"
+fi
+echo ""
 echo "Check status:  systemctl --user status ai-tokens-victoriametrics.service"
 echo "Query UI:      xdg-open http://127.0.0.1:8428/vmui/"
+echo "Re-import history any time (e.g. after a bigger backfill):"
+echo "               cd exporter && go run ./cmd/aitokens-exporter export-vm"
 echo "Uninstall:     bash $BASE/uninstall-victoriametrics.sh"

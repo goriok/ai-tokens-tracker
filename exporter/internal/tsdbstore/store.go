@@ -202,3 +202,39 @@ func (s *Store) Snapshot() []metrics.Sample {
 	}
 	return samples
 }
+
+// AllSamples returns every sample ever appended, in log order (which is
+// timestamp order per series, by construction — see AppendBatch's
+// pre-sorting contract). Unlike Snapshot (current state only, one entry per
+// series), this is the full history — used by the `export-vm` subcommand to
+// hand VictoriaMetrics the real historical timestamps via its /api/v1/import
+// endpoint, since a scrape of /metrics alone can only ever see "now" (see
+// MADR-003 on why /metrics can't carry history). Reads the log file fresh
+// rather than replaying from Open's in-memory index, so it reflects
+// whatever has been flushed to disk at call time, including same-process
+// writes since Open.
+func (s *Store) AllSamples() ([]metrics.Sample, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := s.writer.Flush(); err != nil {
+		return nil, fmt.Errorf("flush before export: %w", err)
+	}
+
+	f, err := os.Open(s.file.Name())
+	if err != nil {
+		return nil, fmt.Errorf("open log for export: %w", err)
+	}
+	defer f.Close()
+
+	var samples []metrics.Sample
+	scanner := bufio.NewScanner(f)
+	scanner.Buffer(make([]byte, 0, 64*1024), 4*1024*1024)
+	for scanner.Scan() {
+		var rec record
+		if err := json.Unmarshal(scanner.Bytes(), &rec); err != nil {
+			continue
+		}
+		samples = append(samples, recordToSample(rec))
+	}
+	return samples, scanner.Err()
+}

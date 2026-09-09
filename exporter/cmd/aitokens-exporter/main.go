@@ -23,6 +23,7 @@ import (
 	"github.com/goriok/ai-tokens-tracker/exporter/internal/metrics"
 	"github.com/goriok/ai-tokens-tracker/exporter/internal/sqlitesource"
 	"github.com/goriok/ai-tokens-tracker/exporter/internal/tsdbstore"
+	"github.com/goriok/ai-tokens-tracker/exporter/internal/vmimport"
 )
 
 func defaultDBPath() string {
@@ -43,7 +44,7 @@ func defaultTSDBDir() string {
 
 func main() {
 	if len(os.Args) < 2 {
-		fmt.Fprintln(os.Stderr, "usage: aitokens-exporter <dump|backfill|serve> [flags]")
+		fmt.Fprintln(os.Stderr, "usage: aitokens-exporter <dump|backfill|serve|export-vm> [flags]")
 		os.Exit(2)
 	}
 
@@ -54,10 +55,36 @@ func main() {
 		runBackfill(os.Args[2:])
 	case "serve":
 		runServe(os.Args[2:])
+	case "export-vm":
+		runExportVM(os.Args[2:])
 	default:
 		fmt.Fprintf(os.Stderr, "unknown subcommand %q\n", os.Args[1])
 		os.Exit(2)
 	}
+}
+
+// runExportVM pushes the full historical log — every sample ever appended
+// by backfill/incremental ingestion, with its real timestamp — into a
+// running VictoriaMetrics via /api/v1/import. This is what makes vmui/PromQL
+// show real history instead of only what's been scraped since VM started:
+// a scrape of /metrics can only ever see "now" (see MADR-003 and
+// vmimport's package doc). Safe to re-run: VictoriaMetrics accepts
+// re-importing the same (series, timestamp, value) as a no-op.
+func runExportVM(args []string) {
+	fs := flag.NewFlagSet("export-vm", flag.ExitOnError)
+	tsdbDir := fs.String("tsdb", defaultTSDBDir(), "directory holding the append-only samples log")
+	vmURL := fs.String("vm-url", "http://127.0.0.1:8428", "VictoriaMetrics base URL")
+	fs.Parse(args)
+
+	store, err := tsdbstore.Open(*tsdbDir)
+	must(err)
+	defer store.Close()
+
+	samples, err := store.AllSamples()
+	must(err)
+
+	must(vmimport.Import(*vmURL, samples))
+	fmt.Printf("exported %d samples to %s/api/v1/import\n", len(samples), *vmURL)
 }
 
 // runServe is Phase 4's long-running process: incremental ingestion on a
