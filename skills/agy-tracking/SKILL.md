@@ -29,11 +29,11 @@ tool-agnostic `UsageEvent` shape — reports/dashboards read that, not the raw p
 - `bash bin/agystatus` — generate and open an HTML report (charts + recent calls table)
 - `bash bin/agysnapshot` — record one quota snapshot now (normally run on a timer)
 - `bash bin/claudecodesnapshot` — record new Claude Code events now (normally run on a timer)
-- `bash bin/tokencompare` — generate and open a static HTML comparing token usage across
-  freely-picked time ranges, second-level precision, compared in raw UTC (e.g. a morning session
-  with a RAG skill on vs. an afternoon session without, same day)
-- `bash bin/tokendashboard` — same comparison, but as a live local server (auto-refreshes,
-  needs `uv sync` once — the only command here with external dependencies)
+- `bash bin/tokendashboard` — live local server comparing token usage across freely-picked time
+  ranges/sessions, second-level precision, compared in raw UTC (e.g. a morning session with a
+  RAG skill on vs. an afternoon session without, same day); auto-refreshes, needs `uv sync` once
+  — the only command here with external dependencies. Supports URL query params (`?prefix=`,
+  `?ranges=`, `?global=`, `?from=`, `?to=`) to pre-load a specific comparison.
 - `bash bin/agywidget` — launch the GTK always-on-top widget (Linux desktop only)
 - `python3 scripts/agy-track.py --model <model> --task "<label>" "<prompt>"` — run a tracked task call
 - `bash bin/agydelegate --complexity <low|medium|high> --task "<label>" "<prompt>"` — delegate a

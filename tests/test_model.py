@@ -115,3 +115,22 @@ def test_usage_event_from_task_call_label_none_when_task_empty():
     result = usage_event_from_task_call(call)
 
     assert result.label is None
+
+
+def test_usage_event_from_task_call_uses_call_source():
+    call = TaskCall(
+        timestamp="2026-09-09T14:30:00Z",
+        model="mai-code-1.1-flash",
+        status="SUCCESS",
+        input_tokens=8140,
+        output_tokens=12,
+        thinking_tokens=0,
+        total_tokens=8152,
+        duration_s=3.0,
+        task="B1",
+        source="copilot",
+    )
+
+    result = usage_event_from_task_call(call)
+
+    assert result.source == "copilot"

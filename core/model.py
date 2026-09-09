@@ -27,11 +27,22 @@ class TaskCall:
     duration_s: float
     task: str
     cache_read_tokens: int = 0
+    source: str = "agy"
+    cache_creation_tokens: int = 0
+    experiment_id: str | None = None
+    question_id: str | None = None
+    strategy: str | None = None
+    confidence_score: float | None = None
+    """Structured experiment metadata, all optional — None for any call that
+    doesn't come from a tracked experiment run (the vast majority of rows).
+    confidence_score is typically filled in later via an update, after the
+    confidence-analysis validation runs (not known at record_task_call time)."""
 
 
 @dataclass
 class AgyRunResult:
-    """Raw result of invoking the agy CLI in print mode."""
+    """Raw result of invoking a CLI in print mode with real token usage
+    (agy, or another source shaped the same way — e.g. Copilot CLI)."""
 
     status: str
     response: str
@@ -40,6 +51,11 @@ class AgyRunResult:
     thinking_tokens: int
     total_tokens: int
     cache_read_tokens: int = 0
+    cache_creation_tokens: int = 0
+    resolved_model: str | None = None
+    """The model the CLI actually used, when it can differ from the one
+    requested (e.g. Copilot's --model auto). None when the caller's
+    requested model is always the one that ran (agy)."""
 
 
 @dataclass
@@ -58,6 +74,24 @@ class ClaudeCodeUsageEvent:
     cache_read_input_tokens: int
     cache_creation_input_tokens: int
     agent_id: str | None = None
+
+
+@dataclass
+class CopilotUsageEvent:
+    """One Copilot CLI session's token usage, from the session.shutdown event
+    in ~/.copilot/session-state/<session_id>/events.jsonl — the automatic,
+    zero-cost counterpart to a copilot-track.py call. Deduplicated by
+    session_id (one shutdown event per session, unlike Claude Code's
+    per-request request_id)."""
+
+    timestamp: str
+    session_id: str
+    cwd: str | None
+    model: str
+    input_tokens: int
+    output_tokens: int
+    cache_read_tokens: int
+    cache_creation_tokens: int
 
 
 @dataclass
@@ -86,6 +120,20 @@ class UsageEvent:
     cache_creation_tokens: int
     agent_id: str | None = None
     label: str | None = None
+    cache_creation_measured: bool = True
+    """False when the source CLI doesn't report cache-write/creation tokens
+    at all (agy, as of this writing) — cache_creation_tokens is then 0
+    because it's unmeasured, not because it's confirmed zero. Keeping this
+    explicit stops agy from silently reading as cheaper than sources (Claude
+    Code, Copilot) that do report this cost."""
+    experiment_id: str | None = None
+    question_id: str | None = None
+    strategy: str | None = None
+    confidence_score: float | None = None
+    """Structured experiment metadata for copilot/agy TaskCalls that recorded
+    it. None for claude-code (parsed client-side from the session title
+    instead — see friendlyExperimentLabel in the dashboard) and for any
+    event outside a tracked experiment run."""
 
     @property
     def total_tokens(self) -> int:
@@ -107,9 +155,23 @@ def usage_event_from_claude_code(event: ClaudeCodeUsageEvent) -> UsageEvent:
     )
 
 
+def usage_event_from_copilot(event: CopilotUsageEvent) -> UsageEvent:
+    return UsageEvent(
+        source="copilot",
+        timestamp=event.timestamp,
+        model=event.model,
+        session_id=event.session_id,
+        project=event.cwd,
+        input_tokens=event.input_tokens,
+        output_tokens=event.output_tokens,
+        cache_read_tokens=event.cache_read_tokens,
+        cache_creation_tokens=event.cache_creation_tokens,
+    )
+
+
 def usage_event_from_task_call(call: TaskCall) -> UsageEvent:
     return UsageEvent(
-        source="agy",
+        source=call.source,
         timestamp=call.timestamp,
         model=call.model,
         session_id=None,
@@ -117,6 +179,13 @@ def usage_event_from_task_call(call: TaskCall) -> UsageEvent:
         input_tokens=call.input_tokens,
         output_tokens=call.output_tokens,
         cache_read_tokens=call.cache_read_tokens,
-        cache_creation_tokens=0,
+        cache_creation_tokens=call.cache_creation_tokens,
         label=call.task or None,
+        # agy's CLI output has no cache-write field — 0 is "unmeasured".
+        # Copilot and Claude Code both report this genuinely.
+        cache_creation_measured=call.source != "agy",
+        experiment_id=call.experiment_id,
+        question_id=call.question_id,
+        strategy=call.strategy,
+        confidence_score=call.confidence_score,
     )

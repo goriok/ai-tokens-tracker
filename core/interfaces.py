@@ -2,7 +2,15 @@ from __future__ import annotations
 
 from typing import Protocol
 
-from core.model import AgyRunResult, ClaudeCodeUsageEvent, SessionTitle, TaskCall, UsageEvent, UsageSnapshot
+from core.model import (
+    AgyRunResult,
+    ClaudeCodeUsageEvent,
+    CopilotUsageEvent,
+    SessionTitle,
+    TaskCall,
+    UsageEvent,
+    UsageSnapshot,
+)
 
 
 class UsageStore(Protocol):
@@ -24,6 +32,19 @@ class UsageStore(Protocol):
 
     def list_session_titles(self) -> list[SessionTitle]: ...
 
+    def record_copilot_event(self, event: CopilotUsageEvent) -> None: ...
+
+    def list_copilot_events(self) -> list[CopilotUsageEvent]: ...
+
+    def is_copilot_session_read(self, session_id: str) -> bool:
+        """Whether this Copilot session's events.jsonl has already been
+        processed — the read cursor for CopilotTranscriptReader, one entry
+        per session rather than a byte offset (each session produces exactly
+        one useful event, session.shutdown, not an append-only stream)."""
+        ...
+
+    def mark_copilot_session_read(self, session_id: str) -> None: ...
+
 
 class AgyRunner(Protocol):
     """Secondary/driven port for invoking the agy CLI."""
@@ -40,4 +61,12 @@ class ClaudeCodeTranscriptReader(Protocol):
 
     def read_new_events(self) -> list[ClaudeCodeUsageEvent]:
         """Every not-yet-seen assistant request across all transcripts, deduplicated by request_id."""
+        ...
+
+
+class CopilotTranscriptReader(Protocol):
+    """Secondary/driven port for reading Copilot CLI session transcripts."""
+
+    def read_new_events(self) -> list[CopilotUsageEvent]:
+        """Every not-yet-seen completed session (session.shutdown present), deduplicated by session_id."""
         ...

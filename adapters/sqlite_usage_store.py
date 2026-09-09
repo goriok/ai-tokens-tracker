@@ -4,7 +4,7 @@ import os
 import sqlite3
 from pathlib import Path
 
-from core.model import ClaudeCodeUsageEvent, SessionTitle, TaskCall, UsageSnapshot
+from core.model import ClaudeCodeUsageEvent, CopilotUsageEvent, SessionTitle, TaskCall, UsageSnapshot
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS usage_snapshots (
@@ -28,7 +28,13 @@ CREATE TABLE IF NOT EXISTS task_calls (
     total_tokens INTEGER NOT NULL DEFAULT 0,
     duration_s REAL NOT NULL DEFAULT 0,
     task TEXT NOT NULL DEFAULT '',
-    cache_read_tokens INTEGER NOT NULL DEFAULT 0
+    cache_read_tokens INTEGER NOT NULL DEFAULT 0,
+    source TEXT NOT NULL DEFAULT 'agy',
+    cache_creation_tokens INTEGER NOT NULL DEFAULT 0,
+    experiment_id TEXT,
+    question_id TEXT,
+    strategy TEXT,
+    confidence_score REAL
 );
 CREATE INDEX IF NOT EXISTS idx_task_calls_timestamp ON task_calls(timestamp);
 CREATE INDEX IF NOT EXISTS idx_task_calls_model ON task_calls(model);
@@ -60,6 +66,24 @@ CREATE TABLE IF NOT EXISTS claude_code_read_cursors (
 CREATE TABLE IF NOT EXISTS session_titles (
     session_id TEXT PRIMARY KEY,
     title TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS copilot_usage_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    timestamp TEXT NOT NULL,
+    session_id TEXT NOT NULL UNIQUE,
+    cwd TEXT,
+    model TEXT NOT NULL,
+    input_tokens INTEGER NOT NULL DEFAULT 0,
+    output_tokens INTEGER NOT NULL DEFAULT 0,
+    cache_read_tokens INTEGER NOT NULL DEFAULT 0,
+    cache_creation_tokens INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_copilot_usage_timestamp ON copilot_usage_events(timestamp);
+CREATE INDEX IF NOT EXISTS idx_copilot_usage_model ON copilot_usage_events(model);
+
+CREATE TABLE IF NOT EXISTS copilot_read_sessions (
+    session_id TEXT PRIMARY KEY
 );
 """
 
@@ -101,6 +125,38 @@ class SqliteUsageStore:
         except sqlite3.OperationalError as exc:
             if "duplicate column" not in str(exc):
                 raise
+        try:
+            with self._conn:
+                self._conn.execute(
+                    "ALTER TABLE task_calls ADD COLUMN source TEXT NOT NULL DEFAULT 'agy'"
+                )
+        except sqlite3.OperationalError as exc:
+            if "duplicate column" not in str(exc):
+                raise
+        self._conn.execute("CREATE INDEX IF NOT EXISTS idx_task_calls_source ON task_calls(source)")
+        try:
+            with self._conn:
+                self._conn.execute(
+                    "ALTER TABLE task_calls ADD COLUMN cache_creation_tokens INTEGER NOT NULL DEFAULT 0"
+                )
+        except sqlite3.OperationalError as exc:
+            if "duplicate column" not in str(exc):
+                raise
+        for column, decl in (
+            ("experiment_id", "TEXT"),
+            ("question_id", "TEXT"),
+            ("strategy", "TEXT"),
+            ("confidence_score", "REAL"),
+        ):
+            try:
+                with self._conn:
+                    self._conn.execute(f"ALTER TABLE task_calls ADD COLUMN {column} {decl}")
+            except sqlite3.OperationalError as exc:
+                if "duplicate column" not in str(exc):
+                    raise
+        self._conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_task_calls_experiment ON task_calls(experiment_id)"
+        )
 
     def record_snapshot(self, snapshot: UsageSnapshot) -> None:
         with self._conn:
@@ -115,8 +171,9 @@ class SqliteUsageStore:
             self._conn.execute(
                 "INSERT INTO task_calls"
                 " (timestamp, model, status, input_tokens, output_tokens, thinking_tokens, total_tokens,"
-                " duration_s, task, cache_read_tokens)"
-                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                " duration_s, task, cache_read_tokens, source, cache_creation_tokens,"
+                " experiment_id, question_id, strategy, confidence_score)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     call.timestamp,
                     call.model,
@@ -128,7 +185,25 @@ class SqliteUsageStore:
                     call.duration_s,
                     call.task,
                     call.cache_read_tokens,
+                    call.source,
+                    call.cache_creation_tokens,
+                    call.experiment_id,
+                    call.question_id,
+                    call.strategy,
+                    call.confidence_score,
                 ),
+            )
+
+    def update_task_call_confidence_score(self, task: str, confidence_score: float) -> None:
+        """Fills in confidence_score after the fact — set at record_task_call
+        time the score isn't known yet (confidence-analysis hasn't run).
+        Matches by task label; if the same label was used more than once,
+        every matching row is updated (labels are expected unique per
+        experiment item in practice, per the round-prefix convention)."""
+        with self._conn:
+            self._conn.execute(
+                "UPDATE task_calls SET confidence_score = ? WHERE task = ?",
+                (confidence_score, task),
             )
 
     def list_snapshots(self) -> list[UsageSnapshot]:
@@ -141,7 +216,9 @@ class SqliteUsageStore:
     def list_task_calls(self) -> list[TaskCall]:
         cur = self._conn.execute(
             "SELECT timestamp, model, status, input_tokens, output_tokens, thinking_tokens,"
-            " total_tokens, duration_s, task, cache_read_tokens FROM task_calls ORDER BY timestamp"
+            " total_tokens, duration_s, task, cache_read_tokens, source, cache_creation_tokens,"
+            " experiment_id, question_id, strategy, confidence_score"
+            " FROM task_calls ORDER BY timestamp"
         )
         return [TaskCall(*row) for row in cur.fetchall()]
 
@@ -204,6 +281,46 @@ class SqliteUsageStore:
     def list_session_titles(self) -> list[SessionTitle]:
         cur = self._conn.execute("SELECT session_id, title FROM session_titles")
         return [SessionTitle(*row) for row in cur.fetchall()]
+
+    def record_copilot_event(self, event: CopilotUsageEvent) -> None:
+        with self._conn:
+            self._conn.execute(
+                "INSERT OR IGNORE INTO copilot_usage_events"
+                " (timestamp, session_id, cwd, model, input_tokens, output_tokens,"
+                " cache_read_tokens, cache_creation_tokens)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    event.timestamp,
+                    event.session_id,
+                    event.cwd,
+                    event.model,
+                    event.input_tokens,
+                    event.output_tokens,
+                    event.cache_read_tokens,
+                    event.cache_creation_tokens,
+                ),
+            )
+
+    def list_copilot_events(self) -> list[CopilotUsageEvent]:
+        cur = self._conn.execute(
+            "SELECT timestamp, session_id, cwd, model, input_tokens, output_tokens,"
+            " cache_read_tokens, cache_creation_tokens"
+            " FROM copilot_usage_events ORDER BY timestamp"
+        )
+        return [CopilotUsageEvent(*row) for row in cur.fetchall()]
+
+    def is_copilot_session_read(self, session_id: str) -> bool:
+        cur = self._conn.execute(
+            "SELECT 1 FROM copilot_read_sessions WHERE session_id = ?", (session_id,)
+        )
+        return cur.fetchone() is not None
+
+    def mark_copilot_session_read(self, session_id: str) -> None:
+        with self._conn:
+            self._conn.execute(
+                "INSERT OR IGNORE INTO copilot_read_sessions (session_id) VALUES (?)",
+                (session_id,),
+            )
 
     def close(self) -> None:
         self._conn.close()

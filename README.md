@@ -31,17 +31,15 @@ consideradas — protobuf interno, LiteLLM, screen-scraping — todas rejeitadas
   coletados antes dessa data estavam subcontados (não incluíam subagentes).
 - `scripts/agy-report.py` — gera um HTML standalone (Chart.js via CDN, sem servidor) com os
   dados coletados.
-- `scripts/token-compare-report.py` — gera um HTML standalone (snapshot único, sem servidor)
-  para comparar consumo de tokens entre janelas de tempo à mão livre, com precisão de segundo
-  (ex: sessão de manhã com `/goriok-skills:recall-search` vs. sessão à tarde sem, no mesmo dia),
-  sem precisar marcar nada previamente — a seleção dos períodos acontece na própria página em
-  UTC. Unifica qualquer fonte com tokens por request (`core/usage.collect_usage_events`), hoje
-  Claude Code e chamadas rastreadas do agy. Para ver dados novos é preciso rodar de novo — não
-  atualiza sozinho.
-- `scripts/token_dashboard_server.py` — mesma comparação, mas como servidor local (FastAPI) que
-  relê o SQLite a cada request: a página se atualiza sozinha a cada 15s via `/api/usage`, sem
-  precisar regenerar arquivo. Única peça do projeto com dependências externas (fastapi/uvicorn) —
-  roda via `uv run`, não `python3` puro.
+- `scripts/token_dashboard_server.py` — servidor local (FastAPI) para comparar consumo de tokens
+  entre janelas de tempo/sessões à mão livre, com precisão de segundo (ex: sessão de manhã com
+  `/goriok-skills:recall-search` vs. sessão à tarde sem, no mesmo dia). Relê o SQLite a cada
+  request: a página se atualiza sozinha a cada 30s via `/api/usage`, sem precisar regenerar
+  arquivo. Unifica qualquer fonte com tokens por request (`core/usage.collect_usage_events`),
+  hoje Claude Code e chamadas rastreadas do agy. Suporta parâmetros de URL (`?prefix=`,
+  `?ranges=`, `?global=`, `?from=`, `?to=`) para pré-carregar uma comparação específica sem
+  precisar montá-la na UI a cada vez. Única peça do projeto com dependências externas
+  (fastapi/uvicorn) — roda via `uv run`, não `python3` puro.
 - `scripts/agy-widget-gtk.py` — widget GTK3 always-on-top (Linux desktop), mostra quota atual
   e chamadas rastreadas do dia.
 - `scripts/agy-delegate.py` — roda uma tarefa via `agy -p`, escolhendo o modelo automaticamente
@@ -78,7 +76,7 @@ de dado que ele expõe) — sem reescrever `scripts/` nem `core/usage.py`.
 
 ```bash
 bash install.sh   # symlinks bin/agystatus, bin/agysnapshot, bin/agywidget, bin/agydelegate,
-                   # bin/claudecodesnapshot, bin/tokencompare, bin/tokendashboard em ~/.local/bin/
+                   # bin/claudecodesnapshot, bin/tokendashboard em ~/.local/bin/
 uv sync            # instala as dependências (necessário só para tokendashboard)
 ```
 
@@ -119,7 +117,6 @@ instalar.
 agysnapshot     # registra um snapshot de quota agora (custo zero)
 claudecodesnapshot  # registra novos eventos do Claude Code agora (custo zero)
 agystatus       # gera e abre o relatório HTML
-tokencompare    # gera e abre o comparativo de janelas de tempo (snapshot único)
 tokendashboard  # sobe o comparativo como servidor local, se atualiza sozinho
 agywidget       # widget GTK always-on-top (Linux)
 agydelegate --complexity low --task "revisão de PR" "revise este diff..."

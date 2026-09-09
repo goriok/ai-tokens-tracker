@@ -3,11 +3,12 @@ from core.usage import build_dashboard_payload, collect_usage_events
 
 
 class FakeUsageStore:
-    def __init__(self, claude_code_events=(), task_calls=(), snapshots=(), session_titles=()):
+    def __init__(self, claude_code_events=(), task_calls=(), snapshots=(), session_titles=(), copilot_events=()):
         self._claude_code_events = list(claude_code_events)
         self._task_calls = list(task_calls)
         self._snapshots = list(snapshots)
         self._session_titles = list(session_titles)
+        self._copilot_events = list(copilot_events)
 
     def list_claude_code_events(self):
         return self._claude_code_events
@@ -20,6 +21,9 @@ class FakeUsageStore:
 
     def list_session_titles(self):
         return self._session_titles
+
+    def list_copilot_events(self):
+        return self._copilot_events
 
 
 def _cc_event(timestamp, request_id="req-1"):
