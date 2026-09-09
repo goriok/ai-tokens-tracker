@@ -28,3 +28,33 @@ jobs:
         with:
           files: ./coverage.xml
           fail_ci_if_error: false
+
+  test-go:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: exporter
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.27"
+          cache-dependency-path: exporter/go.sum
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Test
+        run: go test ./... -race -count=1 -coverprofile=coverage.out
+
+      - name: Build
+        run: go build ./...
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          files: ./exporter/coverage.out
+          flags: go
+          fail_ci_if_error: false
