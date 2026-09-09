@@ -123,13 +123,62 @@ func TestReplay_SkipsCorruptTrailingLine(t *testing.T) {
 		t.Fatalf("write fixture: %v", err)
 	}
 
-	lastVal, err := replay(path)
+	last, err := replay(path)
 	if err != nil {
 		t.Fatalf("replay: %v", err)
 	}
 	key := metrics.SeriesKey("aitokens_tokens_total", metrics.Labels{{Name: "model", Value: "a"}})
-	if lastVal[key] != 42 {
-		t.Errorf("lastVal[key] = %v, want 42 (valid line recovered despite corrupt trailing line)", lastVal[key])
+	if last[key].Value != 42 {
+		t.Errorf("last[key].Value = %v, want 42 (valid line recovered despite corrupt trailing line)", last[key].Value)
+	}
+}
+
+func TestSnapshot_ReturnsOneEntryPerSeriesWithLatestValue(t *testing.T) {
+	dir := t.TempDir()
+	s, err := Open(dir)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	defer s.Close()
+
+	// Same series (model=a) written twice — Snapshot must report only the
+	// latest value, not both, and not double-count as two series.
+	if _, err := s.AppendBatch([]metrics.Sample{
+		sample(metrics.TokensTotal, 10, 0),
+		sample(metrics.TokensTotal, 25, time.Second), // same labels, later write
+	}); err != nil {
+		t.Fatalf("AppendBatch: %v", err)
+	}
+	// A distinct series (model=b) to confirm Snapshot doesn't collapse
+	// different series together.
+	other := metrics.Sample{
+		Metric:    metrics.TokensTotal,
+		Labels:    metrics.Labels{{Name: "model", Value: "b"}},
+		Timestamp: fixedTime,
+		Value:     99,
+	}
+	if _, err := s.AppendBatch([]metrics.Sample{other}); err != nil {
+		t.Fatalf("AppendBatch: %v", err)
+	}
+
+	snap := s.Snapshot()
+	if len(snap) != 2 {
+		t.Fatalf("len(snap) = %d, want 2 (one per distinct series)", len(snap))
+	}
+
+	byModel := map[string]float64{}
+	for _, sm := range snap {
+		for _, l := range sm.Labels {
+			if l.Name == "model" {
+				byModel[l.Value] = sm.Value
+			}
+		}
+	}
+	if byModel["a"] != 25 {
+		t.Errorf(`byModel["a"] = %v, want 25 (latest write, not the first)`, byModel["a"])
+	}
+	if byModel["b"] != 99 {
+		t.Errorf(`byModel["b"] = %v, want 99`, byModel["b"])
 	}
 }
 

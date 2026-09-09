@@ -20,6 +20,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"time"
 
 	"github.com/goriok/ai-tokens-tracker/exporter/internal/metrics"
 )
@@ -41,10 +42,15 @@ type record struct {
 // measurements). Not safe for concurrent use from multiple processes; a
 // single exporter process owns the directory.
 type Store struct {
-	mu      sync.Mutex
-	file    *os.File
-	writer  *bufio.Writer
-	lastVal map[string]float64 // metrics.SeriesKey(metric, labels) -> last written value
+	mu     sync.Mutex
+	file   *os.File
+	writer *bufio.Writer
+	// last holds, per series (keyed by metrics.SeriesKey), the most recently
+	// written sample in full — not just its value — so /metrics can be
+	// served straight from this index without re-reading the log: current
+	// state, no historical query support, matching the "current state
+	// counters" role /metrics has here (see MADR-003).
+	last map[string]metrics.Sample
 }
 
 // Open creates dir if needed and opens (or creates) the append-only log,
@@ -55,7 +61,7 @@ func Open(dir string) (*Store, error) {
 	}
 	path := filepath.Join(dir, logFileName)
 
-	lastVal, err := replay(path)
+	last, err := replay(path)
 	if err != nil {
 		return nil, fmt.Errorf("replay %s: %w", path, err)
 	}
@@ -66,22 +72,22 @@ func Open(dir string) (*Store, error) {
 	}
 
 	return &Store{
-		file:    f,
-		writer:  bufio.NewWriter(f),
-		lastVal: lastVal,
+		file:   f,
+		writer: bufio.NewWriter(f),
+		last:   last,
 	}, nil
 }
 
-// replay reads every record in the log to rebuild the last-value index.
+// replay reads every record in the log to rebuild the last-sample index.
 // A missing file is not an error — a fresh store has none yet. A malformed
 // trailing line (e.g. a crash mid-write) is skipped, not fatal — partial
 // writes only ever happen at EOF, in the record currently being appended.
-func replay(path string) (map[string]float64, error) {
-	lastVal := make(map[string]float64)
+func replay(path string) (map[string]metrics.Sample, error) {
+	last := make(map[string]metrics.Sample)
 
 	f, err := os.Open(path)
 	if os.IsNotExist(err) {
-		return lastVal, nil
+		return last, nil
 	}
 	if err != nil {
 		return nil, err
@@ -95,9 +101,18 @@ func replay(path string) (map[string]float64, error) {
 		if err := json.Unmarshal(scanner.Bytes(), &rec); err != nil {
 			continue
 		}
-		lastVal[metrics.SeriesKey(rec.Metric, rec.Labels)] = rec.Value
+		last[metrics.SeriesKey(rec.Metric, rec.Labels)] = recordToSample(rec)
 	}
-	return lastVal, scanner.Err()
+	return last, scanner.Err()
+}
+
+func recordToSample(rec record) metrics.Sample {
+	return metrics.Sample{
+		Metric:    rec.Metric,
+		Labels:    rec.Labels,
+		Timestamp: time.UnixMilli(rec.TimestampMs).UTC(),
+		Value:     rec.Value,
+	}
 }
 
 // Close flushes and closes the log file.
@@ -147,7 +162,7 @@ func (s *Store) AppendBatch(samples []metrics.Sample) (AppendResult, error) {
 		if err := s.writer.WriteByte('\n'); err != nil {
 			return result, fmt.Errorf("write newline: %w", err)
 		}
-		s.lastVal[metrics.SeriesKey(sample.Metric, sample.Labels)] = sample.Value
+		s.last[metrics.SeriesKey(sample.Metric, sample.Labels)] = sample
 		result.Written++
 	}
 	if err := s.writer.Flush(); err != nil {
@@ -169,18 +184,21 @@ func (s *Store) AppendBatch(samples []metrics.Sample) (AppendResult, error) {
 func (s *Store) SeedAccumulator(acc *metrics.Accumulator) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	for key, value := range s.lastVal {
-		acc.SeedByKey(key, isGaugeKey(key), value)
+	for key, sample := range s.last {
+		acc.SeedByKey(key, metrics.IsGauge(sample.Metric), sample.Value)
 	}
 }
 
-// isGaugeKey extracts the metric name from a SeriesKey (the "metric|..."
-// prefix up to the first '|') and classifies it via metrics.IsGauge.
-func isGaugeKey(key string) bool {
-	for i := 0; i < len(key); i++ {
-		if key[i] == '|' {
-			return metrics.IsGauge(key[:i])
-		}
+// Snapshot returns the current state — the most recent sample of every
+// series this store has ever seen — for serving /metrics. The returned
+// slice is a copy; callers may sort or iterate it freely without any lock
+// held on the store.
+func (s *Store) Snapshot() []metrics.Sample {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	samples := make([]metrics.Sample, 0, len(s.last))
+	for _, sample := range s.last {
+		samples = append(samples, sample)
 	}
-	return metrics.IsGauge(key)
+	return samples
 }
