@@ -7,3 +7,4 @@ fato tomadas.
 |---|---|---|
 | [MADR-001](MADR-001-usage-poll-as-primary-data-source.md) | approved | `/usage` polling (custo zero, cobre TUI) como fonte primária; `-p` como detalhe secundário por tarefa |
 | [MADR-002](MADR-002-hexagonal-ports-for-storage-and-cli-invocation.md) | approved | Portas `UsageStore`/`AgyRunner` para testabilidade, sem infraestrutura real |
+| [MADR-003](MADR-003-timeseries-model-and-go-exporter.md) | approved | Exporter Go com TSDB próprio (não `prometheus/tsdb`, revertido por peso) + `/metrics`, VictoriaMetrics local via scrape |
