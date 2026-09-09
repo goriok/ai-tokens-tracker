@@ -11,4 +11,7 @@ coverage.xml
 htmlcov/
 exporter/bin/
 exporter/coverage.out
+perses/data/
+perses/plugins/
+perses/plugins-archive
 

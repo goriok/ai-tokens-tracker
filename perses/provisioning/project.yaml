@@ -1,0 +1,6 @@
+kind: Project
+metadata:
+  name: ai-tokens-tracker
+spec:
+  display:
+    name: ai-tokens-tracker

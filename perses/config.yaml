@@ -1,0 +1,19 @@
+# Paths here are resolved relative to Perses' working directory at
+# startup — the install script sets WorkingDirectory to this repo's
+# perses/ folder in the systemd unit, so "./data" and "./provisioning"
+# both land inside this repo. Perses also requires plugins-archive/ (the
+# panel/datasource plugin bundle) to be reachable from its own working
+# directory — install-perses.sh symlinks it in here for that reason (see
+# systemd/README.md).
+database:
+  file:
+    folder: "./data"
+    extension: "yaml"
+
+provisioning:
+  interval: 1h
+  folders:
+    - "./provisioning"
+
+security:
+  enable_auth: false

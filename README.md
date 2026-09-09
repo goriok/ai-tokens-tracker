@@ -144,12 +144,15 @@ análise por sessão que o dashboard faz hoje ainda não tem equivalente neste m
 bash systemd/install-exporter.sh          # backfilla o histórico e sobe /metrics em :9464
 bash systemd/install-victoriametrics.sh   # opcional: PromQL + vmui local em :8428, sem Docker
                                            # (já importa o histórico automaticamente ao instalar)
+bash systemd/install-perses.sh            # opcional: dashboard versionado (perses/provisioning/)
+                                           # em :8080, requer o VictoriaMetrics acima
 ```
 
 ```bash
-curl http://127.0.0.1:9464/metrics                                    # estado corrente, formato Prometheus
-xdg-open http://127.0.0.1:8428/vmui/                                  # explorar via PromQL
-# exemplo de query no vmui: sum(increase(aitokens_tokens_total[7d])) by (source)
+curl http://127.0.0.1:9464/metrics                                            # estado corrente, formato Prometheus
+xdg-open http://127.0.0.1:8428/vmui/                                          # PromQL ad-hoc
+xdg-open http://127.0.0.1:8080/projects/ai-tokens-tracker/dashboards/ai-tokens  # dashboard pronto
+# exemplo de query: sum(increase(aitokens_tokens_total[7d])) by (source)
 ```
 
 **Importante sobre histórico:** o VictoriaMetrics só "vê" o instante do scrape (`/metrics` não

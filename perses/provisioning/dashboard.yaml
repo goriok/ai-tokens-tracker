@@ -1,0 +1,177 @@
+kind: Dashboard
+metadata:
+  name: ai-tokens
+  project: ai-tokens-tracker
+spec:
+  display:
+    name: AI Tokens Tracker
+  duration: 30d
+  refreshInterval: 5m
+  variables:
+    - kind: ListVariable
+      spec:
+        name: sessionName
+        display:
+          name: Sessão nomeada
+          description: 'Filtra por título de sessão (claude -n <nome>) — vazio = todas'
+        allowAllValue: true
+        allowMultiple: false
+        sort: alphabetical-desc
+        plugin:
+          kind: PrometheusLabelValuesVariable
+          spec:
+            labelName: session_name
+  panels:
+    tokensBySource:
+      kind: Panel
+      spec:
+        display:
+          name: Tokens por dia — por fonte
+        plugin:
+          kind: TimeSeriesChart
+          spec: {}
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: sum(increase(aitokens_tokens_total[1d])) by (source)
+    tokensByModel:
+      kind: Panel
+      spec:
+        display:
+          name: Tokens por dia — por modelo
+        plugin:
+          kind: TimeSeriesChart
+          spec: {}
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: sum(increase(aitokens_tokens_total[1d])) by (model)
+    tokensByType:
+      kind: Panel
+      spec:
+        display:
+          name: Tokens por dia — por tipo (input/output/cache)
+        plugin:
+          kind: TimeSeriesChart
+          spec: {}
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: sum(increase(aitokens_tokens_total[1d])) by (token_type)
+    totalTokens:
+      kind: Panel
+      spec:
+        display:
+          name: Total de tokens (acumulado)
+        plugin:
+          kind: StatChart
+          spec:
+            calculation: last
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: sum(aitokens_tokens_total)
+    tokensBySession:
+      kind: Panel
+      spec:
+        display:
+          name: 'Tokens por sessão nomeada (filtro: $sessionName)'
+        plugin:
+          kind: TimeSeriesChart
+          spec: {}
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: sum(increase(aitokens_tokens_total{session_name=~"$sessionName"}[1d])) by (session_name, token_type)
+    quotaRemaining:
+      kind: Panel
+      spec:
+        display:
+          name: Quota restante (agy)
+        plugin:
+          kind: GaugeChart
+          spec:
+            calculation: last
+            format:
+              unit: percent
+              decimalPlaces: 0
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: aitokens_quota_remaining_ratio
+  layouts:
+    - kind: Grid
+      spec:
+        display:
+          title: Visão geral
+          collapse:
+            open: true
+        items:
+          - x: 0
+            y: 0
+            width: 6
+            height: 4
+            content:
+              $ref: "#/spec/panels/totalTokens"
+          - x: 6
+            y: 0
+            width: 6
+            height: 4
+            content:
+              $ref: "#/spec/panels/quotaRemaining"
+    - kind: Grid
+      spec:
+        display:
+          title: Evolução diária
+          collapse:
+            open: true
+        items:
+          - x: 0
+            y: 0
+            width: 12
+            height: 8
+            content:
+              $ref: "#/spec/panels/tokensBySource"
+          - x: 12
+            y: 0
+            width: 12
+            height: 8
+            content:
+              $ref: "#/spec/panels/tokensByModel"
+          - x: 0
+            y: 8
+            width: 24
+            height: 8
+            content:
+              $ref: "#/spec/panels/tokensByType"
+    - kind: Grid
+      spec:
+        display:
+          title: Por sessão nomeada
+          collapse:
+            open: true
+        items:
+          - x: 0
+            y: 0
+            width: 24
+            height: 8
+            content:
+              $ref: "#/spec/panels/tokensBySession"

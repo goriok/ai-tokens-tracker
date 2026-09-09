@@ -1,0 +1,12 @@
+kind: GlobalDatasource
+metadata:
+  name: VictoriaMetricsLocal
+spec:
+  default: true
+  plugin:
+    kind: PrometheusDatasource
+    spec:
+      proxy:
+        kind: HTTPProxy
+        spec:
+          url: http://127.0.0.1:8428

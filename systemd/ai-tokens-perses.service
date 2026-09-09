@@ -1,0 +1,14 @@
+[Unit]
+Description=ai-tokens-tracker — Perses (dashboards as code, http://127.0.0.1:8080)
+After=network.target ai-tokens-victoriametrics.service
+Wants=ai-tokens-victoriametrics.service
+
+[Service]
+Type=simple
+WorkingDirectory=%h/sources/goriok/ai-token-tracker/perses
+ExecStart=%h/.local/opt/perses/perses --config=%h/sources/goriok/ai-token-tracker/perses/config.yaml
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target
