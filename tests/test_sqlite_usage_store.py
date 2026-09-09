@@ -27,6 +27,13 @@ def _event(request_id, timestamp="2026-09-01T10:00:00Z"):
     )
 
 
+def test_journal_mode_is_wal(store):
+    # WAL, not the default rollback journal — lets the Go exporter read
+    # concurrently without blocking on, or blocking, these writes.
+    mode = store._conn.execute("PRAGMA journal_mode").fetchone()[0]
+    assert mode.lower() == "wal"
+
+
 def test_record_and_list_claude_code_event_roundtrips(store):
     store.record_claude_code_event(_event("req-1"))
 

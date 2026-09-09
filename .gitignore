@@ -1,8 +1,13 @@
 __pycache__/
 *.pyc
 *.db
+*.db-wal
+*.db-shm
+!exporter/**/testdata/*.db
 .venv/
 .pytest_cache/
 .coverage
 coverage.xml
 htmlcov/
+exporter/bin/
+

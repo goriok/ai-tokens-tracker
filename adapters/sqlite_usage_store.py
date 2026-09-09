@@ -98,6 +98,12 @@ class SqliteUsageStore:
         # a threadpool worker: SQLite itself serializes access, and each call
         # here is a short-lived read/write with no cross-request shared state.
         self._conn = sqlite3.connect(self._path, check_same_thread=False)
+        # WAL instead of the default rollback journal: lets a read-only external
+        # reader (the Go exporter) query concurrently without blocking on — or
+        # blocking — these writes. Persists in the db file, so this only needs
+        # to run once per file, but it's cheap and idempotent to set every open.
+        self._conn.execute("PRAGMA journal_mode=WAL")
+        self._conn.execute("PRAGMA busy_timeout=5000")
         self._conn.executescript(SCHEMA)
         self._migrate()
         os.chmod(self._path, 0o600)  # idempotent — also tightens pre-existing files
