@@ -5,8 +5,10 @@ import os
 import sys
 from pathlib import Path
 
+import yaml
+
 from adapters.sqlite_usage_store import SqliteUsageStore
-from core.model import CopilotUsageEvent
+from core.model import CopilotUsageEvent, SessionTitle
 
 DEFAULT_SESSION_STATE_DIR = Path.home() / ".copilot" / "session-state"
 
@@ -21,7 +23,13 @@ class CopilotTranscriptReader:
     session ends) — so the read cursor here is "has this session_id been
     processed" (copilot_read_sessions), not a byte offset. A session with no
     shutdown event yet (still running, or crashed) is simply skipped until a
-    future read finds it."""
+    future read finds it.
+
+    Also reads workspace.yaml's `name` field (the CLI's own auto-generated or
+    user-set session title) into the shared session_titles table — same table
+    Claude Code's custom-title lines feed, keyed by session_id, so the
+    dashboard's session picker shows a real title instead of a raw UUID for
+    Copilot sessions too."""
 
     def __init__(self, store: SqliteUsageStore, session_state_dir: Path | None = None) -> None:
         self._store = store
@@ -37,6 +45,15 @@ class CopilotTranscriptReader:
             if not session_dir.is_dir():
                 continue
             session_id = session_dir.name
+
+            # Read on every visit, not gated by copilot_read_sessions — a
+            # session's title (workspace.yaml `name`) can be set by the CLI
+            # after the session was already marked read for token-usage
+            # purposes, and re-reading a small YAML file is cheap.
+            title = self._parse_title(session_dir / "workspace.yaml")
+            if title is not None:
+                self._store.record_session_title(SessionTitle(session_id=session_id, title=title))
+
             if self._store.is_copilot_session_read(session_id):
                 continue
 
@@ -50,6 +67,18 @@ class CopilotTranscriptReader:
                 self._store.mark_copilot_session_read(session_id)
 
         return events
+
+    @staticmethod
+    def _parse_title(path: Path) -> str | None:
+        if not path.is_file():
+            return None
+        try:
+            data = yaml.safe_load(path.read_text(encoding="utf-8"))
+        except (yaml.YAMLError, OSError) as exc:
+            print(f"skipping malformed copilot workspace.yaml: {exc}", file=sys.stderr)
+            return None
+        name = (data or {}).get("name")
+        return name.strip() if isinstance(name, str) and name.strip() else None
 
     @staticmethod
     def _parse_session(session_id: str, path: Path) -> CopilotUsageEvent | None:
