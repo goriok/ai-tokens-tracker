@@ -1,5 +1,8 @@
 # ai-tokens-tracker
 
+[![CI](https://github.com/goriok/ai-tokens-tracker/actions/workflows/ci.yml/badge.svg)](https://github.com/goriok/ai-tokens-tracker/actions/workflows/ci.yml)
+[![codecov](https://codecov.io/gh/goriok/ai-tokens-tracker/branch/main/graph/badge.svg)](https://codecov.io/gh/goriok/ai-tokens-tracker)
+
 Rastreia o consumo de tokens/quota de agentes de IA — leve, sem custo de token para coletar.
 
 Cobre hoje o Google Antigravity CLI (`agy`, incluindo uso via TUI, não só chamadas `-p`) e o
