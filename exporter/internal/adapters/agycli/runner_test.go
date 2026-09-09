@@ -2,22 +2,25 @@ package agycli
 
 import (
 	"testing"
+	"time"
 )
 
 // fakeCommandRunner is the seam: it stands in for the real `agy` subprocess
-// invocation. FetchQuota's logic (parsing the JSON response into
-// UsageSnapshots) is tested against this without ever spawning a real
-// process — the real binary is only exercised in manual live verification
-// (see the runner's package doc), the same discipline used for every other
-// adapter in this exporter.
+// invocation. FetchQuota's/RunAgyTask's logic (parsing the JSON response
+// into UsageSnapshots/TaskCall) is tested against this without ever
+// spawning a real process — the real binary is only exercised in manual
+// live verification (see the runner's package doc), the same discipline
+// used for every other adapter in this exporter.
 type fakeCommandRunner struct {
-	stdout string
-	err    error
-	gotCmd []string // records the exact argv passed, so a test can assert on it
+	stdout     string
+	err        error
+	gotCmd     []string      // records the exact argv passed, so a test can assert on it
+	gotTimeout time.Duration // records the timeout passed, so a test can assert the right one was used
 }
 
-func (f *fakeCommandRunner) Run(argv []string) (stdout string, err error) {
+func (f *fakeCommandRunner) Run(argv []string, timeout time.Duration) (stdout string, err error) {
 	f.gotCmd = argv
+	f.gotTimeout = timeout
 	return f.stdout, f.err
 }
 

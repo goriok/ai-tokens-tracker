@@ -9,6 +9,7 @@
 package agycli
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os/exec"
@@ -18,19 +19,33 @@ import (
 )
 
 // commandRunner abstracts subprocess invocation — the seam that lets
-// FetchQuota's response-parsing logic be tested without spawning a real
-// `agy` process. execCommandRunner (below) is the only production
-// implementation; tests use a fake.
+// FetchQuota's and RunAgyTask's response-parsing logic be tested without
+// spawning a real `agy` process. execCommandRunner (below) is the only
+// production implementation; tests use a fake. timeout is per-call, not
+// fixed at construction: FetchQuota and RunAgyTask need very different
+// bounds (see quotaTimeout/taskTimeout) despite sharing this one runner.
 type commandRunner interface {
-	Run(argv []string) (stdout string, err error)
+	Run(argv []string, timeout time.Duration) (stdout string, err error)
 }
 
+// execCommandRunner enforces a hard timeout on every invocation — found
+// necessary by testing against real agy behavior: a -p call to a model
+// whose weekly quota is exhausted can hang indefinitely (observed live,
+// 15+ minutes with no return). The removed Python AgyCliRunner had
+// subprocess.run(..., timeout=600) for run_task and timeout=30 for
+// fetch_usage; this port had no timeout at all until that observation.
 type execCommandRunner struct{}
 
-func (execCommandRunner) Run(argv []string) (string, error) {
-	cmd := exec.Command(argv[0], argv[1:]...)
+func (execCommandRunner) Run(argv []string, timeout time.Duration) (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
 	out, err := cmd.Output()
 	if err != nil {
+		if ctx.Err() == context.DeadlineExceeded {
+			return "", fmt.Errorf("run %v: timed out after %s", argv, timeout)
+		}
 		return "", fmt.Errorf("run %v: %w", argv, err)
 	}
 	return string(out), nil
@@ -41,6 +56,15 @@ type Runner struct {
 	binary string
 	runner commandRunner
 }
+
+// quotaTimeout matches the removed Python AgyCliRunner.fetch_usage's
+// subprocess.run(..., timeout=30) — /usage is a zero-cost meta-command,
+// expected to answer quickly. taskTimeout matches run_task's timeout=600 —
+// a real task call can legitimately take minutes.
+const (
+	quotaTimeout = 30 * time.Second
+	taskTimeout  = 600 * time.Second
+)
 
 // NewRunner returns a Runner that invokes the real `agy` binary on PATH.
 func NewRunner() *Runner {
@@ -69,7 +93,7 @@ type usageResponse struct {
 }
 
 func (r *Runner) FetchQuota() ([]model.UsageSnapshot, error) {
-	stdout, err := r.runner.Run([]string{r.binary, "-p", "/usage", "--output-format", "json"})
+	stdout, err := r.runner.Run([]string{r.binary, "-p", "/usage", "--output-format", "json"}, quotaTimeout)
 	if err != nil {
 		return nil, fmt.Errorf("fetch agy quota: %w", err)
 	}

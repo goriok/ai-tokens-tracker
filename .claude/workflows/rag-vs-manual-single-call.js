@@ -171,13 +171,13 @@ function generatePrompt(item) {
   } else if (item.tool === 'agy') {
     cmd = `cd ${CWD} && bash /home/alves.igor/sources/goriok/ai-token-tracker/bin/agydelegate --model ${AGY_MODEL} --task '${item.label}' '${escaped}'`
   } else {
-    // copilot-track.py wraps the copilot binary (--allow-all-tools and
-    // --disable-builtin-mcps baked in, same overhead-reduction rationale as
-    // before) AND records the call as a TaskCall(source="copilot", ...)
-    // straight into the ai-token-tracker SQLite store, so this round's
-    // Copilot usage shows up on the dashboard without a manual import step.
-    // It prints the response as its only stdout — that's rawOutput.
-    cmd = `cd ${CWD} && python3 /home/alves.igor/sources/goriok/ai-token-tracker/scripts/copilot-track.py --model ${COPILOT_MODEL} --task '${item.label}' '${escaped}'`
+    // `aitokens-exporter track` wraps the copilot binary (--allow-all-tools
+    // and --disable-builtin-mcps baked in, same overhead-reduction rationale
+    // as before) AND appends the call's token usage directly to the local
+    // timeseries store (see exporter/internal/adapters/tracker), so this
+    // round's Copilot usage shows up without a manual import step. It
+    // prints the response as its only stdout — that's rawOutput.
+    cmd = `cd /home/alves.igor/sources/goriok/ai-token-tracker/exporter && go run ./cmd/aitokens-exporter track --model ${COPILOT_MODEL} --task '${item.label}' '${escaped}'`
   }
   return `Rode exatamente este comando via Bash, com timeout de pelo menos 180000ms (o comando pode levar 30-90s para retornar).${extraNote} O campo rawOutput deve conter EXATAMENTE o texto final impresso pelo comando (a resposta, não um stream de eventos), copiado literalmente — nunca um resumo do que você fez, nunca uma narração tipo "o comando executou X", nunca um cabeçalho inventado como "=== COMANDO EXECUTADO ===", nunca só o exit code. Se o comando falhar ou não produzir texto útil, rode-o de novo (até 2 vezes) antes de desistir — não retorne uma explicação no lugar da saída. Comando: ${cmd}`
 }

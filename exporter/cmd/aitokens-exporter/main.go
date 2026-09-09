@@ -20,10 +20,13 @@ import (
 	"github.com/goriok/ai-tokens-tracker/exporter/internal/adapters/agycli"
 	"github.com/goriok/ai-tokens-tracker/exporter/internal/adapters/claudecode"
 	"github.com/goriok/ai-tokens-tracker/exporter/internal/adapters/copilot"
+	"github.com/goriok/ai-tokens-tracker/exporter/internal/adapters/tracker"
 	"github.com/goriok/ai-tokens-tracker/exporter/internal/checkpoint"
 	"github.com/goriok/ai-tokens-tracker/exporter/internal/httpapi"
 	"github.com/goriok/ai-tokens-tracker/exporter/internal/ingest"
 	"github.com/goriok/ai-tokens-tracker/exporter/internal/metrics"
+	"github.com/goriok/ai-tokens-tracker/exporter/internal/model"
+	"github.com/goriok/ai-tokens-tracker/exporter/internal/modelpolicy"
 	"github.com/goriok/ai-tokens-tracker/exporter/internal/ports"
 	"github.com/goriok/ai-tokens-tracker/exporter/internal/tsdbstore"
 	"github.com/goriok/ai-tokens-tracker/exporter/internal/vmimport"
@@ -55,7 +58,7 @@ func defaultTSDBDir() string {
 
 func main() {
 	if len(os.Args) < 2 {
-		fmt.Fprintln(os.Stderr, "usage: aitokens-exporter <backfill|serve|export-vm> [flags]")
+		fmt.Fprintln(os.Stderr, "usage: aitokens-exporter <backfill|serve|export-vm|track> [flags]")
 		os.Exit(2)
 	}
 
@@ -66,10 +69,111 @@ func main() {
 		runServe(os.Args[2:])
 	case "export-vm":
 		runExportVM(os.Args[2:])
+	case "track":
+		runTrack(os.Args[2:])
+	case "delegate":
+		runDelegate(os.Args[2:])
 	default:
 		fmt.Fprintf(os.Stderr, "unknown subcommand %q\n", os.Args[1])
 		os.Exit(2)
 	}
+}
+
+// recordTaskCall appends one tracked call's token usage directly to
+// tsdbstore, seeded from the store's own current state so the running
+// counters aren't reset — shared by runTrack and runDelegate, since both
+// are "a single known-now event," not a batch discovered by reading a
+// transcript (see ingest.Incremental for that path instead).
+func recordTaskCall(tsdbDir string, call model.TaskCall) error {
+	store, err := tsdbstore.Open(tsdbDir)
+	if err != nil {
+		return err
+	}
+	defer store.Close()
+
+	acc := metrics.NewAccumulator()
+	store.SeedAccumulator(acc)
+	samples := acc.ApplyAll(metrics.TaskCallSamples(call))
+	_, err = store.AppendBatch(samples)
+	return err
+}
+
+// runTrack runs a real, costed -p task via copilot or agy and appends its
+// token usage directly to tsdbstore, then prints the task's own response
+// to stdout — a drop-in replacement for the removed Python
+// scripts/copilot-track.py and scripts/agy-track.py, used by
+// .claude/workflows/rag-vs-manual-single-call.js and similar tooling.
+func runTrack(args []string) {
+	fs := flag.NewFlagSet("track", flag.ExitOnError)
+	tool := fs.String("tool", "copilot", "which CLI to track: copilot or agy")
+	modelFlag := fs.String("model", "auto", "model to request")
+	effort := fs.String("effort", "", "agy only: effort level to request")
+	task := fs.String("task", "", "short label for this call; defaults to the prompt")
+	tsdbDir := fs.String("tsdb", defaultTSDBDir(), "directory for the append-only samples log")
+	fs.Parse(args)
+
+	promptArgs := fs.Args()
+	if len(promptArgs) != 1 {
+		fmt.Fprintln(os.Stderr, "usage: aitokens-exporter track [--tool copilot|agy] [--model auto] [--task label] '<prompt>'")
+		os.Exit(2)
+	}
+	prompt := promptArgs[0]
+
+	var (
+		call   model.TaskCall
+		stdout string
+		err    error
+	)
+	switch *tool {
+	case "copilot":
+		call, stdout, err = tracker.NewCopilotRunner().RunCopilotTask(prompt, *modelFlag, *task)
+	case "agy":
+		call, stdout, err = agycli.NewRunner().RunAgyTask(prompt, *modelFlag, *effort, *task)
+	default:
+		fmt.Fprintf(os.Stderr, "unsupported --tool %q (expected copilot or agy)\n", *tool)
+		os.Exit(2)
+	}
+	must(err)
+	must(recordTaskCall(*tsdbDir, call))
+	fmt.Print(stdout)
+}
+
+// runDelegate picks a model for the given task complexity via
+// modelpolicy.ChooseModel (steering away from a model group whose weekly
+// quota is running low, per the current agy quota poll), then runs the
+// task via agy -p and records it — a drop-in replacement for the removed
+// Python scripts/agy-delegate.py.
+func runDelegate(args []string) {
+	fs := flag.NewFlagSet("delegate", flag.ExitOnError)
+	complexity := fs.String("complexity", "medium", "task complexity: low, medium, or high")
+	modelFlag := fs.String("model", "", "skip auto-pick and use this model directly")
+	effort := fs.String("effort", "", "effort level to request")
+	task := fs.String("task", "", "short label for this call; defaults to the prompt")
+	tsdbDir := fs.String("tsdb", defaultTSDBDir(), "directory for the append-only samples log")
+	fs.Parse(args)
+
+	promptArgs := fs.Args()
+	if len(promptArgs) != 1 {
+		fmt.Fprintln(os.Stderr, "usage: aitokens-exporter delegate [--complexity low|medium|high] [--model <model>] [--task label] '<prompt>'")
+		os.Exit(2)
+	}
+	prompt := promptArgs[0]
+
+	quota := agycli.NewRunner()
+
+	chosenModel := *modelFlag
+	if chosenModel == "" {
+		snapshots, err := quota.FetchQuota()
+		must(err)
+		chosenModel, err = modelpolicy.ChooseModel(*complexity, snapshots)
+		must(err)
+		fmt.Fprintf(os.Stderr, "[delegate] complexity=%s -> model=%s\n", *complexity, chosenModel)
+	}
+
+	call, stdout, err := quota.RunAgyTask(prompt, chosenModel, *effort, *task)
+	must(err)
+	must(recordTaskCall(*tsdbDir, call))
+	fmt.Print(stdout)
 }
 
 // runExportVM pushes the full historical log — every sample ever appended
