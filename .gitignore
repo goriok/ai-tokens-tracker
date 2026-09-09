@@ -10,4 +10,5 @@ __pycache__/
 coverage.xml
 htmlcov/
 exporter/bin/
+exporter/coverage.out
 

@@ -1,0 +1,13 @@
+[Unit]
+Description=ai-tokens-tracker — Go exporter (timeseries store + /metrics)
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/sources/goriok/ai-token-tracker
+ExecStart=%h/sources/goriok/ai-token-tracker/bin/aitokensexporter
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target
