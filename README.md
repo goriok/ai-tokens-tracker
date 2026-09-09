@@ -149,11 +149,17 @@ bash systemd/install-perses.sh            # opcional: dashboard versionado (pers
 ```
 
 ```bash
-curl http://127.0.0.1:9464/metrics                                            # estado corrente, formato Prometheus
-xdg-open http://127.0.0.1:8428/vmui/                                          # PromQL ad-hoc
-xdg-open http://127.0.0.1:8080/projects/ai-tokens-tracker/dashboards/ai-tokens  # dashboard pronto
+curl http://127.0.0.1:9464/metrics                                              # estado corrente, formato Prometheus
+xdg-open http://127.0.0.1:8428/vmui/                                            # PromQL ad-hoc
+xdg-open http://127.0.0.1:8080/projects/ai-tokens-tracker/dashboards/ai-tokens     # visão geral de uso
+xdg-open http://127.0.0.1:8080/projects/ai-tokens-tracker/dashboards/experiments   # comparação A/B por sessão
 # exemplo de query: sum(increase(aitokens_tokens_total[7d])) by (source)
 ```
+
+O dashboard `experiments` compara consumo de token entre sessões nomeadas (`claude -n <nome>`) —
+pensado para os experimentos rag-vs-manual em `.claude/workflows/`. Dois seletores multi-valor
+(grupo A / grupo B); a comparação é por seleção manual das sessões, não agrupamento automático por
+regex, porque a nomenclatura de sessão não é consistente entre execuções passadas.
 
 **Importante sobre histórico:** o VictoriaMetrics só "vê" o instante do scrape (`/metrics` não
 carrega timestamp — ver MADR-003). Para o vmui mostrar a evolução real ao longo das semanas, é
