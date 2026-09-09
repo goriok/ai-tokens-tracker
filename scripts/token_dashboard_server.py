@@ -94,7 +94,7 @@ INDEX_HTML = """<!doctype html>
   .custom-range-toggle:hover { color: CanvasText; }
   .custom-range-inputs { display: none; align-items: center; gap: 6px; }
   .custom-range-inputs.open { display: flex; }
-  .sessions { display: flex; flex-direction: column; gap: 8px; margin-bottom: 6px; overflow-y: auto; }
+  .sessions { display: flex; flex-direction: column; gap: 8px; margin-bottom: 6px; overflow-y: auto; flex: none; max-height: 40%; }
   .add-session-row { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; }
   .add-session-row input[type=text] { flex: 1; }
   .session-row { display: flex; flex-direction: column; gap: 3px; padding-bottom: 6px; border-bottom: 1px solid color-mix(in srgb, CanvasText 8%, transparent); }
@@ -102,6 +102,13 @@ INDEX_HTML = """<!doctype html>
   .session-row .swatch { width: 8px; height: 8px; border-radius: 50%; flex: none; }
   .session-row .remove { margin-left: auto; color: GrayText; background: none; border: none; }
   .session-row .title { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .suggestions-heading { font-size: 11px; color: GrayText; text-transform: uppercase; letter-spacing: .02em; margin: 4px 0; }
+  .suggestions { display: flex; flex-direction: column; gap: 2px; overflow-y: auto; min-height: 0; flex: 1; }
+  .suggestion-row { display: flex; align-items: center; gap: 6px; background: none; border: none; text-align: left; padding: 3px 4px; border-radius: 4px; width: 100%; }
+  .suggestion-row:hover:not(:disabled) { background: color-mix(in srgb, CanvasText 6%, transparent); }
+  .suggestion-row:disabled { opacity: 0.4; cursor: default; }
+  .suggestion-row .title { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .suggestion-row .tokens { color: GrayText; font-variant-numeric: tabular-nums; font-size: 12px; flex: none; }
 
   .compare-card { display: flex; flex-direction: column; min-height: 0; gap: 6px; }
   .compare-header { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
@@ -148,7 +155,7 @@ let nextId = 1;
 let initialized = false;
 // The one and only time filter — sessions no longer carry their own from/to,
 // they're just named subsets (by label) clipped to this window (see
-// eventsInRange).
+// eventsForSession).
 let globalWindow = { from: "", to: "" };
 
 // Global filter (topbar): restricts every chart/breakdown/comparison to one
@@ -368,9 +375,11 @@ function renderLayout() {
         <summary><h2 style="display:inline">Sessions to compare</h2></summary>
         <div class="add-session-row">
           <input type="text" id="add-session-input" placeholder="session name or prefix">
-          <button id="add-session">+ add session</button>
+          <button id="add-session" title="add session">+</button>
         </div>
         <div class="sessions" id="sessions-list"></div>
+        <div class="suggestions-heading">Sessions in window (click to add)</div>
+        <div class="suggestions" id="suggestions-list"></div>
       </details>
       <div class="card compare-card">
         <div class="compare-header">
@@ -537,7 +546,7 @@ function timelineEvents() {
   const seen = new Set();
   const out = [];
   for (const s of sessions) {
-    for (const e of eventsInRange(s)) {
+    for (const e of eventsForSession(s)) {
       const key = eventDedupeKey(e);
       if (seen.has(key)) continue;
       seen.add(key);
@@ -636,19 +645,22 @@ function inGlobalWindow(ts) {
 // specific session/agy run (exact title), scope to that run's events; an
 // unmatched free-text label falls back to "everything in the window" (e.g. a
 // "baseline: all" session next to specific-run sessions).
-function eventsInRange(session) {
+function eventsForSession(session) {
   const run = namedRuns().find(r => r.displayTitle === session.label);
   const pool = run ? run.events : filteredEvents();
   return pool.filter(e => inGlobalWindow(e.timestamp));
 }
 
-// Unifies two ways a run can be named: a Claude Code session's custom
-// title (N events share it) and any other source's TaskCall --task label
-// (1 event = 1 label — covers agy and Copilot alike, and any future
-// label-based source without more hardcoding). Each becomes a
-// { key, title, source, events } entry so the session picker doesn't need to
-// know which kind it's choosing between. Titles are always shown raw — no
-// attempt to decode a naming convention out of them.
+// Unifies three ways a run can be named: any source's session_id (grouped
+// by session_id — Claude Code and Copilot both stamp every event with one),
+// a Claude Code session's custom title (looked up from SESSION_TITLES to
+// label that session_id-based group instead of showing the raw id), and any
+// other source's TaskCall --task label for events with no session_id at all
+// (1 event = 1 label — covers agy, and any future label-based source
+// without more hardcoding). Each becomes a { key, title, source, events }
+// entry so the session picker doesn't need to know which kind it's choosing
+// between. Titles are always shown raw — no attempt to decode a naming
+// convention out of them.
 //
 // displayTitle always includes source + start date ("A1 (claude-code,
 // 2026-09-04)") — two runs can share a bare title (different sources, or a
@@ -657,20 +669,25 @@ function eventsInRange(session) {
 // displayTitle, never the bare title.
 function namedRuns() {
   const events = filteredEvents();
-  const bySession = SESSION_TITLES.map(t => ({
-    key: `session:${t.session_id}`,
-    title: t.title,
-    source: "claude-code",
-    events: events.filter(e => e.session_id === t.session_id),
-  }));
-  const labeledSources = [...new Set(events.filter(e => e.source !== "claude-code" && e.label).map(e => e.source))];
+  const sessionTitleById = new Map(SESSION_TITLES.map(t => [t.session_id, t.title]));
+  const sessionIds = [...new Set(events.filter(e => e.session_id).map(e => e.session_id))];
+  const bySession = sessionIds.map(session_id => {
+    const sessionEvents = events.filter(e => e.session_id === session_id);
+    return {
+      key: `session:${session_id}`,
+      title: sessionTitleById.get(session_id) || session_id,
+      source: sessionEvents[0].source,
+      events: sessionEvents,
+    };
+  });
+  const labeledSources = [...new Set(events.filter(e => !e.session_id && e.label).map(e => e.source))];
   const byLabel = labeledSources.flatMap(source => {
-    const labels = [...new Set(events.filter(e => e.source === source && e.label).map(e => e.label))];
+    const labels = [...new Set(events.filter(e => e.source === source && !e.session_id && e.label).map(e => e.label))];
     return labels.map(label => ({
       key: `label:${source}:${label}`,
       title: label,
       source,
-      events: events.filter(e => e.source === source && e.label === label),
+      events: events.filter(e => e.source === source && !e.session_id && e.label === label),
     }));
   });
   return [...bySession, ...byLabel]
@@ -743,9 +760,61 @@ function renderSessionsList() {
   }
 
   list.replaceChildren(...children);
+  renderSuggestionsList();
 }
 
-function quotaConsumedInRange(session) {
+// Every known run (already scoped to the tool filter by namedRuns) that has
+// at least one event inside the global window, ranked by tokens actually
+// within that window — so picking a narrower window re-ranks the list
+// instead of just hiding/showing a fixed top-N. Click adds it to the
+// comparison directly, same as typing its exact title in add-session-input.
+function renderSuggestionsList() {
+  const list = document.getElementById("suggestions-list");
+  const used = new Set(sessions.map(s => s.label));
+
+  const ranked = namedRuns()
+    .map(run => ({ run, tokens: run.events.filter(e => inGlobalWindow(e.timestamp)).reduce((s, e) => s + eventTotalTokens(e), 0) }))
+    .filter(r => r.tokens > 0)
+    .sort((a, b) => b.tokens - a.tokens);
+
+  const children = ranked.map(({ run, tokens }) => {
+    const alreadyAdded = used.has(run.displayTitle);
+    const row = document.createElement("button");
+    row.type = "button";
+    row.className = "suggestion-row";
+    row.disabled = alreadyAdded;
+    row.title = alreadyAdded ? "already added" : run.displayTitle;
+
+    const title = document.createElement("span");
+    title.className = "title";
+    title.textContent = run.displayTitle;
+    row.appendChild(title);
+
+    const tokensEl = document.createElement("span");
+    tokensEl.className = "tokens";
+    tokensEl.textContent = tokens.toLocaleString();
+    row.appendChild(tokensEl);
+
+    row.addEventListener("click", () => {
+      sessions.push({ id: nextId++, label: run.displayTitle });
+      renderAll();
+    });
+
+    return row;
+  });
+
+  if (children.length === 0) {
+    const empty = document.createElement("p");
+    empty.className = "empty";
+    empty.style.padding = "8px 0";
+    empty.textContent = "No sessions in this window.";
+    children.push(empty);
+  }
+
+  list.replaceChildren(...children);
+}
+
+function quotaConsumedForSession(session) {
   const matches = s => inGlobalWindow(s.timestamp);
   const byGroup = groupBy(SNAPSHOTS, s => s.model_group);
   let consumed = 0;
@@ -759,23 +828,23 @@ function quotaConsumedInRange(session) {
   return consumed;
 }
 
-function computeRangeMetrics(session) {
-  const events = eventsInRange(session);
+function computeSessionMetrics(session) {
+  const events = eventsForSession(session);
   const inputTokens = events.reduce((s, e) => s + e.input_tokens, 0);
   const outputTokens = events.reduce((s, e) => s + e.output_tokens, 0);
   const cacheRead = events.reduce((s, e) => s + e.cache_read_tokens, 0);
   const cacheCreation = events.reduce((s, e) => s + e.cache_creation_tokens, 0);
-  // false if ANY event in range comes from a source that doesn't report
-  // cache-write at all (agy, as of this writing) — cacheCreation would then
-  // read as "confirmed 0" when it's really "unmeasured." Shown as a caveat
-  // regardless of includeCacheCreation, since it explains why a range's
-  // number may understate its real cost.
+  // false if ANY event in this session comes from a source that doesn't
+  // report cache-write at all (agy, as of this writing) — cacheCreation
+  // would then read as "confirmed 0" when it's really "unmeasured." Shown
+  // as a caveat regardless of includeCacheCreation, since it explains why a
+  // session's number may understate its real cost.
   const cacheCreationFullyMeasured = events.length > 0 && events.every(e => e.cache_creation_measured);
   const totalTokens = events.reduce((s, e) => s + eventTotalTokens(e), 0);
   const tokensSemCacheRead = inputTokens + outputTokens + (includeCacheCreation ? cacheCreation : 0);
   const cacheHitRate = (inputTokens + cacheRead) > 0 ? cacheRead / (inputTokens + cacheRead) : 0;
   const sessions = new Set(events.map(e => e.session_id).filter(Boolean)).size;
-  const quota = quotaConsumedInRange(session);
+  const quota = quotaConsumedForSession(session);
   const scored = events.filter(e => e.confidence_score != null);
   const confidenceScore = scored.length > 0 ? scored.reduce((s, e) => s + e.confidence_score, 0) / scored.length : null;
   return { requests: events.length, sessions, totalTokens, tokensSemCacheRead, inputTokens, outputTokens, cacheRead, cacheCreation, cacheCreationFullyMeasured, cacheHitRate, quota, confidenceScore, confidenceScoredCount: scored.length };
@@ -785,13 +854,13 @@ let compareChart = null;
 let breakdownMode = "cache";
 
 function earliestTimestamp(session) {
-  const ts = eventsInRange(session).map(e => e.timestamp).sort();
+  const ts = eventsForSession(session).map(e => e.timestamp).sort();
   return ts.length > 0 ? ts[0] : null;
 }
 
-// A lighter tint of a range's base color, for the "less interesting" part of
-// a stacked segment (e.g. cache_read — already-paid-for reuse) so the darker
-// full-color segment draws the eye to what actually cost something new.
+// A lighter tint of a session's base color, for the "less interesting" part
+// of a stacked segment (e.g. cache_read — already-paid-for reuse) so the
+// darker full-color segment draws the eye to what actually cost something new.
 function lighten(hex, amount) {
   const n = parseInt(hex.slice(1), 16);
   const r = (n >> 16) & 0xff, g = (n >> 8) & 0xff, b = n & 0xff;
@@ -799,18 +868,18 @@ function lighten(hex, amount) {
   return `rgb(${mix(r)}, ${mix(g)}, ${mix(b)})`;
 }
 
-// Horizontal bars, one per range, ordered by real start time — total tokens
-// is a magnitude per range, not a continuous series, so bars compare
+// Horizontal bars, one per session, ordered by real start time — total tokens
+// is a magnitude per session, not a continuous series, so bars compare
 // magnitude directly without a line implying a trend that isn't there.
 // Stacked into segments (cache hit vs. miss, or input/output/cache) so each
-// range's own color still identifies it, tinted lighter for cache reuse.
+// session's own color still identifies it, tinted lighter for cache reuse.
 function renderCompareChart() {
   const points = sessions
-    .map((r, i) => ({ range: r, i, metrics: computeRangeMetrics(r), t: earliestTimestamp(r) }))
+    .map((s, i) => ({ session: s, i, metrics: computeSessionMetrics(s), t: earliestTimestamp(s) }))
     .filter(p => p.t !== null)
     .sort((a, b) => a.t.localeCompare(b.t));
 
-  const labels = points.map(p => p.range.label);
+  const labels = points.map(p => p.session.label);
   const colors = points.map(p => PALETTE[p.i % PALETTE.length]);
 
   const datasets = breakdownMode === "cache"
@@ -849,15 +918,15 @@ function renderCompareChart() {
 function renderCompare() {
   const grid = document.getElementById("compare-grid");
   grid.replaceChildren(...sessions.map((r, i) => {
-    const m = computeRangeMetrics(r);
-    const cacheCreationTitle = "Includes a source that does not report cache-creation tokens (agy) - this range's real cost may be higher than shown."
+    const m = computeSessionMetrics(r);
+    const cacheCreationTitle = "Includes a source that does not report cache-creation tokens (agy) - this session's real cost may be higher than shown."
     const cacheCreationRow = includeCacheCreation
       ? `<dt>Cache creation${m.cacheCreationFullyMeasured ? "" : " ⚠"}</dt><dd${m.cacheCreationFullyMeasured ? "" : ` title="${cacheCreationTitle}"`}>${m.cacheCreation.toLocaleString()}</dd>`
       : "";
-    // Only shown when at least one event in the range has a confidence_score
-    // (confidence-analysis was run and recorded for it) — most ranges won't,
+    // Only shown when at least one event in the session has a confidence_score
+    // (confidence-analysis was run and recorded for it) — most sessions won't,
     // so the row is absent rather than showing "–" everywhere. When the
-    // range mixes scored and unscored events (a group, or partial
+    // session mixes scored and unscored events (a group, or partial
     // validation), the partial-coverage note makes that explicit instead of
     // presenting an average as if every item were scored.
     const confidenceRow = m.confidenceScore == null
@@ -894,7 +963,7 @@ function renderBreakdowns() {
   const models = [...new Set(filteredEvents().map(e => e.model))];
   const modelDatasets = models.map((m, i) => ({
     label: m,
-    data: active.map(r => eventsInRange(r).filter(e => e.model === m).reduce((s, e) => s + eventTotalTokens(e), 0)),
+    data: active.map(r => eventsForSession(r).filter(e => e.model === m).reduce((s, e) => s + eventTotalTokens(e), 0)),
     backgroundColor: PALETTE[i % PALETTE.length],
   }));
   if (modelChart) modelChart.destroy();
@@ -911,7 +980,7 @@ function renderBreakdowns() {
   const sources = [...new Set(filteredEvents().map(e => e.source))];
   const sourceDatasets = sources.map((src, i) => ({
     label: src,
-    data: active.map(r => eventsInRange(r).filter(e => e.source === src).reduce((s, e) => s + eventTotalTokens(e), 0)),
+    data: active.map(r => eventsForSession(r).filter(e => e.source === src).reduce((s, e) => s + eventTotalTokens(e), 0)),
     backgroundColor: PALETTE[i % PALETTE.length],
   }));
   if (sourceChart) sourceChart.destroy();
