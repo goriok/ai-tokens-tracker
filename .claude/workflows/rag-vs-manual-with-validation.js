@@ -38,9 +38,9 @@ function withManual(question) {
 // when querying the SQLite store manually. new Date() throws inside Workflow
 // scripts (would break resume), so the timestamp is passed in via args instead
 // of generated here — pass it as args.roundPrefix (e.g. "202609081930") when
-// invoking Workflow. No separators in the label itself (tool/strategy/id are
-// concatenated directly after the prefix) to keep session names free of "-".
-// Falls back to a fixed literal if args are omitted.
+// invoking Workflow. "-" separates prefix/strategy/id/tool in the label, per
+// the session_name naming convention. Falls back to a fixed literal if args
+// are omitted.
 const ROUND_PREFIX = (args && args.roundPrefix) || '202609081930'
 
 const items = []
@@ -53,7 +53,7 @@ for (let i = 0; i < QUESTIONS.length; i++) {
         tool,
         strategy,
         questionId: qId,
-        label: `${ROUND_PREFIX}${strategy}${qId}${tool.replace(/-/g, '')}`,
+        label: `${ROUND_PREFIX}-${strategy}-${qId}-${tool}`,
         question,
       })
     }

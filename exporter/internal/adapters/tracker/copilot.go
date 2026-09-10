@@ -72,16 +72,19 @@ type usageFile struct {
 }
 
 // RunCopilotTask runs `copilot -p <prompt> --model <model>
-// --allow-all-tools --disable-builtin-mcps --usage-output-file <tmp>`,
+// --allow-all-tools [--disable-builtin-mcps] --usage-output-file <tmp>`,
 // mirroring the removed Python CopilotCliRunner's exact flags
 // (--disable-builtin-mcps drops ~9.4k tokens of fixed GitHub MCP schema
-// overhead per call, confirmed by measurement there). label becomes the
-// TaskCall's Task field; if empty, the prompt itself is used (truncated to
-// 200 chars, matching the removed Python copilot-track.py). Returns the
-// subprocess's stdout too — callers (the `track` CLI subcommand) print
-// this as the command's response, matching copilot-track.py's behavior of
-// being otherwise transparent to the caller.
-func (r *CopilotRunner) RunCopilotTask(prompt, model_, label string) (model.TaskCall, string, error) {
+// overhead per call, confirmed by measurement there) when
+// disableBuiltinMCPs is true — the default for every existing caller.
+// Passing false omits the flag entirely (the copilot CLI has no negated
+// form of it), enabling the with-vs-without-built-in-MCPs comparison. label
+// becomes the TaskCall's Task field; if empty, the prompt itself is used
+// (truncated to 200 chars, matching the removed Python copilot-track.py).
+// Returns the subprocess's stdout too — callers (the `track` CLI
+// subcommand) print this as the command's response, matching
+// copilot-track.py's behavior of being otherwise transparent to the caller.
+func (r *CopilotRunner) RunCopilotTask(prompt, model_, label string, disableBuiltinMCPs bool) (model.TaskCall, string, error) {
 	usageFile_, err := os.CreateTemp("", "aitokens-copilot-usage-*.json")
 	if err != nil {
 		return model.TaskCall{}, "", fmt.Errorf("create temp usage file: %w", err)
@@ -90,14 +93,18 @@ func (r *CopilotRunner) RunCopilotTask(prompt, model_, label string) (model.Task
 	usageFile_.Close()
 	defer os.Remove(usagePath)
 
-	start := time.Now().UTC()
-	stdout, runErr := r.runner.Run([]string{
+	argv := []string{
 		"copilot", "-p", prompt,
 		"--model", model_,
 		"--allow-all-tools",
-		"--disable-builtin-mcps",
-		"--usage-output-file", usagePath,
-	})
+	}
+	if disableBuiltinMCPs {
+		argv = append(argv, "--disable-builtin-mcps")
+	}
+	argv = append(argv, "--usage-output-file", usagePath)
+
+	start := time.Now().UTC()
+	stdout, runErr := r.runner.Run(argv)
 	duration := time.Since(start).Seconds()
 
 	status := "SUCCESS"

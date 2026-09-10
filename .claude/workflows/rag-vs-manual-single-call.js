@@ -78,7 +78,10 @@ const CLAUDE_MODEL = 'haiku' // Claude Haiku 4.5, cheapest Claude tier
 const AGY_MODEL = 'gemini-3.8-flash-medium' // same model prior rounds used
 const COPILOT_MODEL = 'auto' // asymmetric vs. fixed models on the other two sides — documented in the report; actual model used is captured per call via --usage-output-file
 
-const QUESTIONS = [
+// Pass args.questions (an array of strings) when invoking Workflow to run
+// this same comparison against a different set of questions/context — the
+// array below is only the fallback default for a standalone run.
+const QUESTIONS = (args && args.questions) || [
   'Como o isolamento de rede por tenant funciona no cloud-emulator?',
   'Como o cloud-emulator evita acumular lixo (namespaces/interfaces órfãos) em reconciliações repetidas?',
   'Quais são os pré-requisitos de host para rodar o cloud-emulator, e por que cada um é necessário?',
@@ -86,9 +89,13 @@ const QUESTIONS = [
 
 // Both strategies run from the source repo. CONTEXT_DIR is only referenced
 // by the contexto-rag-codigo arm's direct-read fallback (absolute path,
-// since it's no longer the cwd).
-const CWD = '/home/alves.igor/sources/dpro/k8s/cloud-emulator'
-const CONTEXT_DIR = '/home/alves.igor/sources/dpro/k8s/dpro-k8s-ctx/topics/cloud-emulator'
+// since it's no longer the cwd). All three are overridable via args so this
+// same comparison can run against a different project/context — the
+// literals below are only the fallback defaults for a standalone run
+// against cloud-emulator.
+const CWD = (args && args.cwd) || '/home/alves.igor/sources/dpro/k8s/cloud-emulator'
+const CONTEXT_DIR = (args && args.contextDir) || '/home/alves.igor/sources/dpro/k8s/dpro-k8s-ctx/topics/cloud-emulator'
+const RECALL_COLLECTION = (args && args.recallCollection) || 'cloud-emulator'
 
 const STRATEGIES = ['codigo-direto', 'contexto-rag-codigo']
 
@@ -99,7 +106,7 @@ function withCodigoDireto(question) {
 
 // Braço B: RAG first, explicit order, fallback to direct reading of either repo.
 function withContextoRagCodigo(question) {
-  return `${question} Primeiro use a skill /goriok-skills:recall-search para buscar a resposta (a collection cloud-emulator cobre a documentação de contexto e um overview do código-fonte). Se a busca semântica não trouxer informação suficiente para responder com precisão, complemente com grep/leitura direta — tanto dos arquivos em ${CONTEXT_DIR}/ quanto do código-fonte deste repositório (src/, CLAUDE.md, README.md).`
+  return `${question} Primeiro use a skill /goriok-skills:recall-search para buscar a resposta (a collection ${RECALL_COLLECTION} cobre a documentação de contexto e um overview do código-fonte). Se a busca semântica não trouxer informação suficiente para responder com precisão, complemente com grep/leitura direta — tanto dos arquivos em ${CONTEXT_DIR}/ quanto do código-fonte deste repositório (src/, CLAUDE.md, README.md).`
 }
 
 function withStrategy(strategy, question) {
@@ -108,8 +115,11 @@ function withStrategy(strategy, question) {
 
 // Same round-prefix mechanism as the predecessor script — new Date() is
 // unavailable inside Workflow scripts (would break resume), so the caller
-// passes a timestamp via args.roundPrefix when invoking Workflow.
-const ROUND_PREFIX = (args && args.roundPrefix) || '202609091000'
+// passes a timestamp via args.roundPrefix when invoking Workflow, formatted
+// YYYYMMDD-HHmm. session_name follows the <code-agent>-<contexto>-<date>
+// naming convention (e.g. claude-code-rag-20260910-1000) to make dashboard
+// filtering by prefix/substring easy.
+const ROUND_PREFIX = (args && args.roundPrefix) || '20260909-1000'
 
 const TOOLS = ['claude-code', 'agy', 'copilot']
 
@@ -119,7 +129,7 @@ for (let i = 0; i < QUESTIONS.length; i++) {
   for (const strategy of STRATEGIES) {
     const question = withStrategy(strategy, QUESTIONS[i])
     for (const tool of TOOLS) {
-      const label = `${ROUND_PREFIX}${qId}${strategy.replace(/-/g, '')}${tool.replace(/-/g, '')}`
+      const label = `${tool}-${strategy}-${ROUND_PREFIX}`
       items.push({
         tool,
         strategy,

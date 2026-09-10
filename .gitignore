@@ -1,5 +1,7 @@
 exporter/bin/
 exporter/coverage.out
+exporter/aitokens-exporter
 perses/data/
 perses/plugins/
 perses/plugins-archive
+docs/experiments/

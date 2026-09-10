@@ -110,11 +110,12 @@ func runTrack(args []string) {
 	effort := fs.String("effort", "", "agy only: effort level to request")
 	task := fs.String("task", "", "short label for this call; defaults to the prompt")
 	tsdbDir := fs.String("tsdb", defaultTSDBDir(), "directory for the append-only samples log")
+	enableBuiltinMCPs := fs.Bool("enable-builtin-mcps", false, "copilot only: keep built-in MCP servers (e.g. github-mcp-server) enabled instead of the default --disable-builtin-mcps")
 	fs.Parse(args)
 
 	promptArgs := fs.Args()
 	if len(promptArgs) != 1 {
-		fmt.Fprintln(os.Stderr, "usage: aitokens-exporter track [--tool copilot|agy] [--model auto] [--task label] '<prompt>'")
+		fmt.Fprintln(os.Stderr, "usage: aitokens-exporter track [--tool copilot|agy] [--model auto] [--task label] [--enable-builtin-mcps] '<prompt>'")
 		os.Exit(2)
 	}
 	prompt := promptArgs[0]
@@ -126,7 +127,8 @@ func runTrack(args []string) {
 	)
 	switch *tool {
 	case "copilot":
-		call, stdout, err = tracker.NewCopilotRunner().RunCopilotTask(prompt, *modelFlag, *task)
+		disableBuiltinMCPs := !*enableBuiltinMCPs
+		call, stdout, err = tracker.NewCopilotRunner().RunCopilotTask(prompt, *modelFlag, *task, disableBuiltinMCPs)
 	case "agy":
 		call, stdout, err = agycli.NewRunner().RunAgyTask(prompt, *modelFlag, *effort, *task)
 	default:

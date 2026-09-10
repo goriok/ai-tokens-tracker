@@ -8,9 +8,8 @@ spec:
     description: >-
       Comparação A/B de consumo de token entre sessões nomeadas — para os
       experimentos rag-vs-manual (ver .claude/workflows/). Escolha as sessões
-      de cada grupo nos seletores; a nomenclatura de session_name não segue
-      um padrão fixo entre execuções, então a seleção é manual, não regex
-      automática. Ver docs/madrs/MADR-003.
+      de cada grupo nos seletores (busca por nome, múltipla seleção). Ver
+      docs/madrs/MADR-003.
   duration: 90d
   refreshInterval: 0s
   variables:
@@ -19,8 +18,9 @@ spec:
         name: groupA
         display:
           name: Grupo A (ex. rag / com skill)
-        allowAllValue: false
+        allowAllValue: true
         allowMultiple: true
+        defaultValue: []
         sort: alphabetical-desc
         plugin:
           kind: PrometheusLabelValuesVariable
@@ -31,8 +31,9 @@ spec:
         name: groupB
         display:
           name: Grupo B (ex. manual / sem skill)
-        allowAllValue: false
+        allowAllValue: true
         allowMultiple: true
+        defaultValue: []
         sort: alphabetical-desc
         plugin:
           kind: PrometheusLabelValuesVariable
@@ -44,47 +45,61 @@ spec:
       spec:
         display:
           name: Total de tokens por sessão selecionada
-          description: Uma linha por sessão — compare visualmente os grupos A e B pelo nome.
+          description: Uma barra por sessão — compare visualmente os grupos A e B pelo nome.
         plugin:
-          kind: TimeSeriesTable
-          spec: {}
+          kind: BarChart
+          spec:
+            calculation: last
+            sort: desc
+            orientation: horizontal
         queries:
           - kind: TimeSeriesQuery
             spec:
               plugin:
                 kind: PrometheusTimeSeriesQuery
                 spec:
-                  query: sum(aitokens_tokens_total{session_name=~"${groupA}|${groupB}"}) by (session_name)
+                  query: sum(last_over_time(aitokens_tokens_total{session_name=~"${groupA}|${groupB}"}[$__range])) by (session_name)
+                  seriesNameFormat: '{{session_name}}'
     tokensByTypeGroupA:
       kind: Panel
       spec:
         display:
           name: 'Grupo A — tokens por tipo'
         plugin:
-          kind: TimeSeriesChart
-          spec: {}
+          kind: PieChart
+          spec:
+            calculation: last
+            radius: 60
+            legend:
+              position: right
         queries:
           - kind: TimeSeriesQuery
             spec:
               plugin:
                 kind: PrometheusTimeSeriesQuery
                 spec:
-                  query: sum(aitokens_tokens_total{session_name=~"$groupA"}) by (token_type)
+                  query: sum(last_over_time(aitokens_tokens_total{session_name=~"$groupA"}[$__range])) by (token_type)
+                  seriesNameFormat: '{{token_type}}'
     tokensByTypeGroupB:
       kind: Panel
       spec:
         display:
           name: 'Grupo B — tokens por tipo'
         plugin:
-          kind: TimeSeriesChart
-          spec: {}
+          kind: PieChart
+          spec:
+            calculation: last
+            radius: 60
+            legend:
+              position: right
         queries:
           - kind: TimeSeriesQuery
             spec:
               plugin:
                 kind: PrometheusTimeSeriesQuery
                 spec:
-                  query: sum(aitokens_tokens_total{session_name=~"$groupB"}) by (token_type)
+                  query: sum(last_over_time(aitokens_tokens_total{session_name=~"$groupB"}[$__range])) by (token_type)
+                  seriesNameFormat: '{{token_type}}'
     totalGroupA:
       kind: Panel
       spec:
@@ -100,7 +115,7 @@ spec:
               plugin:
                 kind: PrometheusTimeSeriesQuery
                 spec:
-                  query: sum(aitokens_tokens_total{session_name=~"$groupA"})
+                  query: sum(last_over_time(aitokens_tokens_total{session_name=~"$groupA"}[$__range]))
     totalGroupB:
       kind: Panel
       spec:
@@ -116,22 +131,47 @@ spec:
               plugin:
                 kind: PrometheusTimeSeriesQuery
                 spec:
-                  query: sum(aitokens_tokens_total{session_name=~"$groupB"})
-    modelBreakdown:
+                  query: sum(last_over_time(aitokens_tokens_total{session_name=~"$groupB"}[$__range]))
+    modelBreakdownGroupA:
       kind: Panel
       spec:
         display:
-          name: Modelo usado — grupos A e B
+          name: 'Grupo A — modelo usado'
         plugin:
-          kind: TimeSeriesChart
-          spec: {}
+          kind: PieChart
+          spec:
+            calculation: last
+            radius: 60
+            legend:
+              position: right
         queries:
           - kind: TimeSeriesQuery
             spec:
               plugin:
                 kind: PrometheusTimeSeriesQuery
                 spec:
-                  query: sum(aitokens_tokens_total{session_name=~"${groupA}|${groupB}"}) by (session_name, model)
+                  query: sum(last_over_time(aitokens_tokens_total{session_name=~"$groupA"}[$__range])) by (model)
+                  seriesNameFormat: '{{model}}'
+    modelBreakdownGroupB:
+      kind: Panel
+      spec:
+        display:
+          name: 'Grupo B — modelo usado'
+        plugin:
+          kind: PieChart
+          spec:
+            calculation: last
+            radius: 60
+            legend:
+              position: right
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: sum(last_over_time(aitokens_tokens_total{session_name=~"$groupB"}[$__range])) by (model)
+                  seriesNameFormat: '{{model}}'
   layouts:
     - kind: Grid
       spec:
@@ -142,19 +182,19 @@ spec:
         items:
           - x: 0
             y: 0
-            width: 6
+            width: 12
             height: 4
             content:
               $ref: "#/spec/panels/totalGroupA"
-          - x: 6
-            y: 0
-            width: 6
-            height: 4
-            content:
-              $ref: "#/spec/panels/totalGroupB"
           - x: 12
             y: 0
             width: 12
+            height: 4
+            content:
+              $ref: "#/spec/panels/totalGroupB"
+          - x: 0
+            y: 4
+            width: 24
             height: 8
             content:
               $ref: "#/spec/panels/totalsByGroup"
@@ -186,7 +226,13 @@ spec:
         items:
           - x: 0
             y: 0
-            width: 24
+            width: 12
             height: 8
             content:
-              $ref: "#/spec/panels/modelBreakdown"
+              $ref: "#/spec/panels/modelBreakdownGroupA"
+          - x: 12
+            y: 0
+            width: 12
+            height: 8
+            content:
+              $ref: "#/spec/panels/modelBreakdownGroupB"

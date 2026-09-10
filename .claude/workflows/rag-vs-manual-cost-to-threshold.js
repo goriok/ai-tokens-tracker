@@ -87,7 +87,7 @@ for (let i = 0; i < QUESTIONS.length; i++) {
         tool,
         strategy,
         questionId: qId,
-        label: `${ROUND_PREFIX}${strategy}${qId}${tool.replace(/-/g, '')}`,
+        label: `${ROUND_PREFIX}-${strategy}-${qId}-${tool}`,
         question,
       })
     }

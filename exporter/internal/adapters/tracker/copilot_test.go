@@ -52,7 +52,7 @@ func TestRunCopilotTask_ParsesRealUsageFileShape(t *testing.T) {
 	fake := &fakeCommandRunner{stdout: "ok\n", usageFileJSON: realCopilotUsageFileJSON}
 	runner := newCopilotRunnerWithCommandRunner(fake)
 
-	call, _, err := runner.RunCopilotTask("responda apenas: ok", "auto", "smoke-test")
+	call, _, err := runner.RunCopilotTask("responda apenas: ok", "auto", "smoke-test", true)
 	if err != nil {
 		t.Fatalf("RunCopilotTask: %v", err)
 	}
@@ -79,7 +79,7 @@ func TestRunCopilotTask_TaskDefaultsToPromptWhenLabelEmpty(t *testing.T) {
 	fake := &fakeCommandRunner{stdout: "ok\n", usageFileJSON: realCopilotUsageFileJSON}
 	runner := newCopilotRunnerWithCommandRunner(fake)
 
-	call, _, err := runner.RunCopilotTask("responda apenas: ok", "auto", "")
+	call, _, err := runner.RunCopilotTask("responda apenas: ok", "auto", "", true)
 	if err != nil {
 		t.Fatalf("RunCopilotTask: %v", err)
 	}
@@ -92,7 +92,7 @@ func TestRunCopilotTask_InvokesExpectedFlags(t *testing.T) {
 	fake := &fakeCommandRunner{stdout: "ok\n", usageFileJSON: realCopilotUsageFileJSON}
 	runner := newCopilotRunnerWithCommandRunner(fake)
 
-	if _, _, err := runner.RunCopilotTask("hello", "auto", ""); err != nil {
+	if _, _, err := runner.RunCopilotTask("hello", "auto", "", true); err != nil {
 		t.Fatalf("RunCopilotTask: %v", err)
 	}
 
@@ -114,11 +114,30 @@ func TestRunCopilotTask_InvokesExpectedFlags(t *testing.T) {
 	}
 }
 
+// TestRunCopilotTask_BuiltinMCPsCanBeKeptEnabled is the seam for the
+// with-vs-without-built-in-MCPs experiment: disableBuiltinMCPs=false must
+// omit --disable-builtin-mcps entirely, not pass some "false" form of it —
+// the copilot CLI flag is a presence-only switch, it has no negated form.
+func TestRunCopilotTask_BuiltinMCPsCanBeKeptEnabled(t *testing.T) {
+	fake := &fakeCommandRunner{stdout: "ok\n", usageFileJSON: realCopilotUsageFileJSON}
+	runner := newCopilotRunnerWithCommandRunner(fake)
+
+	if _, _, err := runner.RunCopilotTask("hello", "auto", "", false); err != nil {
+		t.Fatalf("RunCopilotTask: %v", err)
+	}
+
+	for _, a := range fake.gotArgv {
+		if a == "--disable-builtin-mcps" {
+			t.Errorf("argv %v should not contain --disable-builtin-mcps when disableBuiltinMCPs=false", fake.gotArgv)
+		}
+	}
+}
+
 func TestRunCopilotTask_UsageFileCleanedUpAfterCall(t *testing.T) {
 	fake := &fakeCommandRunner{stdout: "ok\n", usageFileJSON: realCopilotUsageFileJSON}
 	runner := newCopilotRunnerWithCommandRunner(fake)
 
-	if _, _, err := runner.RunCopilotTask("hello", "auto", ""); err != nil {
+	if _, _, err := runner.RunCopilotTask("hello", "auto", "", true); err != nil {
 		t.Fatalf("RunCopilotTask: %v", err)
 	}
 
