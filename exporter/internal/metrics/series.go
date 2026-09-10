@@ -75,20 +75,29 @@ func ClaudeCodeSamples(e model.ClaudeCodeEvent, sessionName string) []RawSample 
 // CopilotSamples maps one Copilot session-aggregate event into token
 // samples. The timestamp is the session's startTime, not per-request — see
 // MADR-003's documented granularity limitation; not corrected here.
-func CopilotSamples(e model.CopilotEvent) []RawSample {
+// CopilotSamples maps one Copilot session-aggregate event into token
+// samples. sessionName is the optional user-assigned title for e's session
+// (see ClaudeCodeSamples' sessionName parameter for the same treatment) —
+// empty when the session was never named.
+func CopilotSamples(e model.CopilotEvent, sessionName string) []RawSample {
 	base := Labels{
 		{Name: "source", Value: "copilot"},
 		{Name: "model", Value: e.Model},
 		{Name: "project", Value: e.Cwd},
 		{Name: "git_branch", Value: ""},
 		{Name: "agent_kind", Value: AgentKindMain},
+		{Name: "session_name", Value: sessionName},
 	}
 	return tokenSamples(base, e.Timestamp, e.InputTokens, e.OutputTokens, e.CacheReadTokens, e.CacheCreationTokens)
 }
 
 // TaskCallSamples maps one tracked -p call (agy or copilot-track) into token
 // samples. source comes from the call itself (TaskCall.Source), not a
-// literal — task_calls covers more than one tool.
+// literal — task_calls covers more than one tool. c.Task (the --task label
+// passed to `track`/`delegate`) becomes the session_name label — the only
+// way a tracked call's TaskCall.Task ever reaches
+// dashboard-experiments.yaml's session_name-filtered comparison, since a
+// tracked call has no session_id of its own to look up a title for.
 func TaskCallSamples(c model.TaskCall) []RawSample {
 	base := Labels{
 		{Name: "source", Value: c.Source},
@@ -96,6 +105,7 @@ func TaskCallSamples(c model.TaskCall) []RawSample {
 		{Name: "project", Value: ""},
 		{Name: "git_branch", Value: ""},
 		{Name: "agent_kind", Value: AgentKindMain},
+		{Name: "session_name", Value: c.Task},
 	}
 	samples := tokenSamples(base, c.Timestamp, c.InputTokens, c.OutputTokens, c.CacheReadTokens, c.CacheCreationTokens)
 

@@ -148,6 +148,39 @@ func TestTaskCallSamples_EmitsCacheCreationMeasuredGauge(t *testing.T) {
 	}
 }
 
+// TestTaskCallSamples_TaskLabelBecomesSessionName is the seam for a real
+// bug found by running the rag-vs-manual-single-call experiment live and
+// checking what actually landed in the store: TaskCall.Task (the --task
+// label passed to `track`/`delegate`, e.g. a round-labeled experiment
+// name) never made it into the session_name label — only
+// ClaudeCodeSamples set it. The dashboard-experiments.yaml Perses
+// dashboard filters by session_name to compare named A/B groups; without
+// this, every Copilot/agy tracked call is invisible to that comparison
+// regardless of --task, silently defeating the feature's whole point for
+// two of the three sources.
+func TestTaskCallSamples_TaskLabelBecomesSessionName(t *testing.T) {
+	call := model.TaskCall{Timestamp: fixedTime, Model: "m", Source: "copilot", Task: "202609100011experiment"}
+	samples := TaskCallSamples(call)
+
+	if len(samples) == 0 {
+		t.Fatal("no samples returned")
+	}
+	got := labelValue(samples[0].Labels, "session_name")
+	if got != "202609100011experiment" {
+		t.Errorf("session_name = %q, want %q (the --task label)", got, "202609100011experiment")
+	}
+}
+
+func TestTaskCallSamples_EmptyTaskLabelMeansEmptySessionName(t *testing.T) {
+	call := model.TaskCall{Timestamp: fixedTime, Model: "m", Source: "agy", Task: ""}
+	samples := TaskCallSamples(call)
+
+	got := labelValue(samples[0].Labels, "session_name")
+	if got != "" {
+		t.Errorf("session_name = %q, want empty when no --task label was given", got)
+	}
+}
+
 func TestUsageSnapshotSample_IsGaugeNotTokenMetric(t *testing.T) {
 	snap := model.UsageSnapshot{Timestamp: fixedTime, ModelGroup: "Gemini Models", RemainingFraction: 0.42}
 	sample := UsageSnapshotSample(snap)
@@ -163,13 +196,27 @@ func TestUsageSnapshotSample_IsGaugeNotTokenMetric(t *testing.T) {
 	}
 }
 
+func TestCopilotSamples_SessionNameLabelReflectsArgument(t *testing.T) {
+	e := model.CopilotEvent{Timestamp: fixedTime, Model: "gpt-5.6-sol"}
+
+	unnamed := CopilotSamples(e, "")
+	if got := labelValue(unnamed[0].Labels, "session_name"); got != "" {
+		t.Errorf("unnamed session_name = %q, want empty", got)
+	}
+
+	named := CopilotSamples(e, "my-copilot-session")
+	if got := labelValue(named[0].Labels, "session_name"); got != "my-copilot-session" {
+		t.Errorf("named session_name = %q, want my-copilot-session", got)
+	}
+}
+
 func TestCopilotSamples_GranularityIsSessionLevel(t *testing.T) {
 	// Documents the known limitation (MADR-003): Copilot's timestamp is the
 	// session start, not per-request — this test just pins that the sample
 	// carries the event's timestamp unchanged, not something finer-grained
 	// that doesn't exist in the source data.
 	e := model.CopilotEvent{Timestamp: fixedTime, Model: "gpt-5.6-sol", InputTokens: 10}
-	samples := CopilotSamples(e)
+	samples := CopilotSamples(e, "")
 	for _, s := range samples {
 		if !s.Timestamp.Equal(fixedTime) {
 			t.Errorf("Timestamp = %v, want %v", s.Timestamp, fixedTime)

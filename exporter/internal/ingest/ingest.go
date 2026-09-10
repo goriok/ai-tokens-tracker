@@ -48,23 +48,32 @@ func collectRawSamples(
 	if err != nil {
 		return nil, after, fmt.Errorf("read claude-code transcripts: %w", err)
 	}
-	titleBySession := make(map[string]string, len(ccTitles))
-	for _, t := range ccTitles {
-		titleBySession[t.SessionID] = t.Title
-	}
-	for _, e := range ccEvents {
-		raws = append(raws, metrics.ClaudeCodeSamples(e, titleBySession[e.SessionID])...)
-	}
 	newCheckpoint.ClaudeCodeFileCursors = newFileCursors
 
-	copilotEvents, _, newReadSessions, err := copilotReader.ReadNewEvents(after.CopilotReadSessions)
+	copilotEvents, copilotTitles, newReadSessions, err := copilotReader.ReadNewEvents(after.CopilotReadSessions)
 	if err != nil {
 		return nil, after, fmt.Errorf("read copilot transcripts: %w", err)
 	}
-	for _, e := range copilotEvents {
-		raws = append(raws, metrics.CopilotSamples(e)...)
-	}
 	newCheckpoint.CopilotReadSessions = newReadSessions
+
+	// Both sources key their session title lookups by session_id, so one
+	// shared map serves both — a session_id namespace collision between a
+	// Claude Code and a Copilot session is not a real concern in practice
+	// (they're independently-generated UUIDs).
+	titleBySession := make(map[string]string, len(ccTitles)+len(copilotTitles))
+	for _, t := range ccTitles {
+		titleBySession[t.SessionID] = t.Title
+	}
+	for _, t := range copilotTitles {
+		titleBySession[t.SessionID] = t.Title
+	}
+
+	for _, e := range ccEvents {
+		raws = append(raws, metrics.ClaudeCodeSamples(e, titleBySession[e.SessionID])...)
+	}
+	for _, e := range copilotEvents {
+		raws = append(raws, metrics.CopilotSamples(e, titleBySession[e.SessionID])...)
+	}
 
 	snapshots, err := quota.FetchQuota()
 	if err != nil {
